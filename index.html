@@ -126,7 +126,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 11:44 AM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 11:53 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -146,6 +146,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
     <h2>Your rules</h2>
     <p class="note">Switch one off and the 150 rebuild without it. Results shows how many tickets use the freedom.</p>
     <div id="rulelist"></div>
+    <label class="rule"><input type="checkbox" id="polishbox"><span>Best-pair finish</span><small>Re-picks the best pair of seats on every ticket, so each follows the model harder. Tested worse on Weeks 2-4 (W3: best ticket #129 to #12,410), better on Week 5. Off by default.</small></label>
     <hr class="sep">
     <h2>Banned players</h2>
     <p class="note">Tick Ban on any player in the Players tab (or "Ban him" in Pairs). Bans hold in every week and are saved in this browser. A banned QB's tickets go to the other QBs.</p>
@@ -361,6 +362,32 @@ function buildBook(W, K) {
     }
     return {t: cur, pen};
   }
+  function polish(t, qi, nStack, cuts) {
+    const ss = new Set(stackOf[qi]), cur = t.slice(), M = 14;
+    let curV = 0; for (let a = 0; a < 9; a++) { curV += bf[cur[a]]; for (let b = a + 1; b < 9; b++) curV += pair[cur[a] * n + cur[b]]; }
+    for (let round = 0; round < 4; round++) {
+      const seats = []; for (let a = 1; a < cur.length; a++) if (!ss.has(cur[a])) seats.push(a);
+      let bestV = curV + 1e-9, bestT = null;
+      for (let x = 0; x < seats.length; x++) for (let y = x + 1; y < seats.length; y++) {
+        const A = seats[x], Bq = seats[y], keep = cur.filter((j, k) => k !== A && k !== Bq);
+        let keepV = 0, keepSal = 0; for (let a = 0; a < 7; a++) { keepV += bf[keep[a]]; keepSal += P[keep[a]].s; for (let b = a + 1; b < 7; b++) keepV += pair[keep[a] * n + keep[b]]; }
+        const pool = posOld => { const dst = P[posOld].p === "DST", out = [];
+          for (let j = 0; j < n; j++) { const p = P[j]; if (p.p === "QB" || (p.p === "DST") !== dst || keep.includes(j) || !capOK(j, qi)) continue; out.push([gain(keep, j), j]); }
+          return out.sort((u, v) => v[0] - u[0] || u[1] - v[1]).slice(0, M); };
+        const ca = pool(cur[A]), cb = pool(cur[Bq]);
+        for (const [ga, j] of ca) for (const [gb, k] of cb) {
+          if (j === k) continue;
+          const v = keepV + ga + gb + pair[j * n + k]; if (v <= bestV) continue;
+          const sal = keepSal + P[j].s + P[k].s; if (sal < SAL_LO || sal > SAL_HI) continue;
+          const tt = keep.concat([j, k]); if (penalty(tt, ss, nStack, cuts) !== 0) continue;
+          bestV = v; bestT = tt;
+        }
+      }
+      if (!bestT) break;
+      for (let a = 0; a < 9; a++) cur[a] = bestT[a]; curV = bestV;
+    }
+    return cur;
+  }
   function repair(cur, qi, nStack, cuts) {   // deterministic: every pair of non-stack seats, emptied and refilled under every rule
     const ss = new Set(stackOf[qi]), Q = P[qi], idx = [];
     for (let a = 1; a < cur.length; a++) if (!ss.has(cur[a])) idx.push(a);
@@ -388,16 +415,24 @@ function buildBook(W, K) {
   }
   // the QB order: each QB's quota spread through the book
   const seq = [], quota = {};
-  const qbs = P.map((p, i) => i).filter(i => P[i].p === "QB" && P[i].q > 0), live = qbs.filter(i => !banned[i] && stackOf[i].length);
+  const qbs = P.map((p, i) => i).filter(i => P[i].p === "QB" && P[i].q > 0), live = qbs.filter(i => !banned[i] && stackOf[i].length), liveSet = new Set(live);
   const total = qbs.reduce((a, i) => a + P[i].q, 0), liveQ = live.reduce((a, i) => a + P[i].q, 0);
-  if (live.length) {
-    const raw = live.map(i => ({i, x: P[i].q * total / liveQ})); let given = 0;
-    for (const r of raw) { quota[r.i] = Math.floor(r.x); given += quota[r.i]; }
+  const order0 = [];   // the order from the ORIGINAL quotas (unchanged by any ban)
+  for (const i of qbs) for (let k = 1; k <= P[i].q; k++) order0.push({qi: i, frac: k / P[i].q, k});
+  order0.sort((a, b) => a.frac - b.frac || P[a.qi].slot - P[b.qi].slot || a.qi - b.qi);
+  for (const e of order0) if (liveSet.has(e.qi)) seq.push(e);
+  for (const i of live) quota[i] = P[i].q;
+  if (live.length && liveQ < total) {   // the banned QBs' tickets, handed out at the end
+    const extra = total - liveQ, raw = live.map(i => ({i, x: P[i].q * extra / liveQ})), add = {}; let given = 0;
+    for (const r of raw) { add[r.i] = Math.floor(r.x); given += add[r.i]; }
     raw.sort((a, b) => (b.x - Math.floor(b.x)) - (a.x - Math.floor(a.x)) || P[a.i].slot - P[b.i].slot || a.i - b.i);
-    for (let k = 0; given < total; k++, given++) quota[raw[k % raw.length].i]++;
+    for (let k = 0; given < extra; k++, given++) add[raw[k % raw.length].i]++;
+    const tail = [];
+    for (const i of live) for (let m = 1; m <= add[i]; m++) tail.push({qi: i, frac: m / add[i], k: P[i].q + m});
+    tail.sort((a, b) => a.frac - b.frac || P[a.qi].slot - P[b.qi].slot || a.qi - b.qi);
+    for (const e of tail) { seq.push(e); quota[e.qi]++; }
   }
-  for (const i of live) { const q = quota[i]; rem[i] = q; for (let k = 1; k <= q; k++) seq.push({qi: i, frac: k / q, k}); }
-  seq.sort((a, b) => a.frac - b.frac || P[a.qi].slot - P[b.qi].slot || a.qi - b.qi);
+  for (const i of live) rem[i] = quota[i];
   for (const {qi, k} of seq) {
     const Q = P[qi];
     for (let j = 0; j < n; j++) bf[j] = base[j] * (P[j].p === "QB" ? 1 : Math.max(0.05, 1 - K.spread * use[j] / capOf(j)));
@@ -406,6 +441,7 @@ function buildBook(W, K) {
     for (let tries = 0; tries < 14 && !done; tries++) {
       const c0 = construct(qi, nStack, cuts); let t = null;
       if (c0) { const r = improve(c0, qi, nStack, cuts); t = r.pen === 0 ? r.t : repair(r.t, qi, nStack, cuts); }
+      if (t && K.polish) t = polish(t, qi, nStack, cuts);   // fix 2 - a switch, off by default (it tested worse on Weeks 2-4)
       if (!t) { if (nStack === 2) { nStack = 1; continue; } break; }
       let worst = -1, wsh = K.shared;   // too close to an earlier ticket? add it as a cut and rebuild (V13's lazy share cap)
       for (let b = 0; b < sets.length; b++) { let sh = 0; for (const j of t) if (sets[b].has(j)) sh++; if (sh > wsh) { wsh = sh; worst = b; } }
@@ -450,12 +486,13 @@ const RULES = [
 const LAB = window.LAB;
 const S = {week: LAB.weeks.length - 1, book: "mine", truth: false, color: "pos", tab: "results", view: "tickets", shown: 150, sel: null, filter: null, game: null, sort: null,
   knobs: defaultKnobs()};
-function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; return k; }
+function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; k.polish = false; return k; }
 try { const saved = JSON.parse(localStorage.getItem("comboLabKnobs") || "null");
   if (saved) { for (const k of KNOBS) if (typeof saved[k.k] === "number") S.knobs[k.k] = saved[k.k];
     if (saved.rules) for (const r of RULES) if (typeof saved.rules[r.k] === "boolean") S.knobs.rules[r.k] = saved.rules[r.k];
     if (Array.isArray(saved.bans)) S.knobs.bans = saved.bans.filter(x => typeof x === "string").sort();
-    if (typeof saved.banQ === "boolean") S.knobs.banQ = saved.banQ; } } catch (e) {}
+    if (typeof saved.banQ === "boolean") S.knobs.banQ = saved.banQ;
+    if (typeof saved.polish === "boolean") S.knobs.polish = saved.polish; } } catch (e) {}
 const isBanned = n => S.knobs.bans.includes(n);
 const isOut = p => isBanned(p.n) || (S.knobs.banQ && !!p.st);   // off every ticket: a name ban, or a Q tag while "ban everyone tagged Q" is on
 function toggleBan(name) { S.knobs.bans = isBanned(name) ? S.knobs.bans.filter(x => x !== name) : S.knobs.bans.concat(name).sort(); renderBans(); scheduleRebuild(); }
@@ -736,6 +773,7 @@ async function saveCSV(btn) {
 // ---------- controls ----------
 function renderBans() {
   if ($("banq")) $("banq").checked = !!S.knobs.banQ;
+  if ($("polishbox")) $("polishbox").checked = !!S.knobs.polish;
   const el = $("banlist"); if (!el) return;
   el.innerHTML = S.knobs.bans.length ? '<button class="btn small" id="clearbans">Unban all (' + S.knobs.bans.length + ')</button><div class="banlist">' + S.knobs.bans.map(n => '<button data-unban="' + esc(n) + '" title="Unban ' + esc(n) + '">' + esc(n) + " ✕</button>").join("") + "</div>" : '<p class="note">None.</p>';
 }
@@ -771,6 +809,7 @@ document.addEventListener("click", e => {
   if (e.target.dataset && e.target.dataset.unban) { toggleBan(e.target.dataset.unban); return; }
   if (e.target.id === "clearbans" || e.target.id === "unbanall2") { const nb = S.knobs.bans.length; if (!nb || !confirm("Unban all " + nb + " players?")) return; S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
   if (e.target.id === "banq") { S.knobs.banQ = e.target.checked; scheduleRebuild(); return; }
+  if (e.target.id === "polishbox") { S.knobs.polish = e.target.checked; scheduleRebuild(); return; }
   if (e.target.id === "bansel" && S.sel !== null) { toggleBan(wk().pre.players[S.sel].n); return; }
   if (e.target.classList && e.target.classList.contains("banbox")) { toggleBan(e.target.dataset.name); return; }
   if (e.target.id === "closeexp") { $("exportbox").innerHTML = ""; return; }
@@ -803,7 +842,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); renderAll();
-const BUILD = "20261017114424";
+const BUILD = "20261017115329";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
