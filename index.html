@@ -126,7 +126,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 1:28 PM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 2:22 PM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -202,7 +202,8 @@ const MAXP = {QB: 1, RB: 3, WR: 4, TE: 2, DST: 1}, SKILL = {RB: 1, WR: 1, TE: 1}
 const LIFT = {}; for (const [side, a, b, v] of window.LAB.lifts) LIFT[side + "|" + a + "|" + b] = v;
 const teOK = (a, b) => (a.s >= 6000 && b.s >= 6000) || (a.te10 === 1 && b.te10 === 1);
 const anyIn = (arr, s) => !!arr && arr.some(j => s.has(j));
-const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false};
+const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false, top5: true};
+const isTop5 = p => !!SKILL[p.p] && p.pr <= 5;   // an RB / WR / TE among the slate's top 5 at his position by projection (the same top 5 your tough-game filter spares)
 const DEFAULT_FILTERS = {tough: true, dogval: true, depth: true, dogdst: true};
 function filteredOut(p, F) {   // LARRY'S BAN FILTERS (Sat 10-17) -> the reason a player is filtered out, or ""
   F = F || DEFAULT_FILTERS;
@@ -242,6 +243,7 @@ function ticketBreaks(ctx, t, R) {   // every rule, on a whole ticket -> the lis
   if (R.bbforce && Q.gs === 0 && !anyIn(one[Q.o + "|RB"], s)) out.push("underdog QB without their RB1");
   const tes = t.filter(j => P[j].p === "TE");
   if (R.twote && tes.length === 2 && !teOK(P[tes[0]], P[tes[1]])) out.push("two-TE");
+  if (R.top5 && t.filter(j => isTop5(P[j])).length > 3) out.push("4+ top-5 players");
   return out;
 }
 function baseScore(p, K, om, osd) {
@@ -304,6 +306,7 @@ function buildBook(W, K) {
     if (R.bbban && Q.gs === 2 && (one[Q.o + "|RB"] || []).includes(j)) return false;
     if (!forced && R.tebb && Q.tw && p.t === Q.o && SKILL[p.p] && !(one[Q.o + "|TE"] || []).includes(j) && !t.some(x => (one[Q.o + "|TE"] || []).includes(x))) return false;
     if (R.twote && p.p === "TE") for (const x of t) if (P[x].p === "TE" && !teOK(p, P[x])) return false;
+    if (R.top5 && isTop5(p)) { let c = 0; for (const x of t) if (isTop5(P[x])) c++; if (c >= 3) return false; }
     if (cuts && cuts.length && overCut(t.concat(j), cuts) > 0) return false;
     return true;
   }
@@ -616,6 +619,7 @@ const RULES = [
   {k: "twote", label: "Two-TE rule", help: "Two TEs only when both cost $6,000+ or both average 10+ DK points this season."},
   {k: "dst", label: "DST faces nobody on the ticket", help: "The defence never plays against one of your players."},
   {k: "onespot", label: "One player per team per position", help: "His QB's receivers excepted."},
+  {k: "top5", label: "At most 3 top-5 players per ticket", help: "No more than 3 RB / WR / TE from the slate's top 5 at their position (by projection) on one ticket. You added this on 10-17."},
   {k: "bbforce", label: "Underdog QB carries the favourite's RB1", help: "For 3+ point underdogs. You dropped this on 10-16, so it starts off."},
 ];
 const LAB = window.LAB;
@@ -999,7 +1003,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); renderAll();
-const BUILD = "20261017132812";
+const BUILD = "20261017142213";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
