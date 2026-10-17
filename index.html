@@ -126,7 +126,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 3:28 PM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 4:29 PM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -684,7 +684,7 @@ function favDog(W) {   // team -> 2 = a 3+ point favourite, 0 = a 3+ point under
   for (const p of W.pre.players) if (p.p === "QB" && p.gs !== undefined) m[p.t] = p.gs;
   FD.set(W, m); return m;
 }
-function chip(i, W, noPts) {
+function chip(i, W, noPts, withOpp) {   // withOpp: "PIT v TB" (the Players list)
   const p = W.pre.players[i], tags = [];
   if (SKILL[p.p]) { if (p.ws === 2) tags.push('<b class="tag t-soft">S</b>'); if (p.ws === 0) tags.push('<b class="tag t-tough">T</b>'); }
   if (p.val) tags.push('<b class="tag t-val">V</b>');
@@ -700,7 +700,7 @@ function chip(i, W, noPts) {
   if (S.truth) { const pt = W.post.pts[i]; if (!noPts) extra = " <i>" + pt.toFixed(1) + "</i>";
     if (S.color === "pts") style = pt >= 20 ? "background:color-mix(in srgb,var(--good) 48%,var(--chip))" : pt >= 12 ? "background:color-mix(in srgb,var(--good) 20%,var(--chip))" : pt <= 4 ? "background:color-mix(in srgb,var(--bad) 22%,var(--chip))" : ""; }
   const title = (why ? "FILTERED (" + why + ") · " : "") + p.n + " · " + (p.dr || p.p) + (p.rr ? " #" + p.rr + " of the slate's " + (p.dr || "").replace(/\d+$/, (m) => m) + "s" : "") + (p.pr && p.pr < 999 ? " · #" + p.pr + " " + p.p : "") + " · " + p.t + " v " + p.o + " · " + fmt$(p.s) + " · our own% " + p.own + " · boom " + (p.w * 100).toFixed(1) + "%" + (p.role ? " · " + p.role : "");
-  return '<span class="chip p-' + p.p + (S.sel === i ? " sel" : "") + (isOut(p) ? " banned" : "") + '" data-i="' + i + '" style="' + style + '" title="' + esc(title) + '"><b>' + esc(shortName(p.n)) + "</b> <i>" + p.t + "</i>" + tags.join("") + extra + "</span>";
+  return '<span class="chip p-' + p.p + (S.sel === i ? " sel" : "") + (isOut(p) ? " banned" : "") + '" data-i="' + i + '" style="' + style + '" title="' + esc(title) + '"><b>' + esc(shortName(p.n)) + "</b> <i>" + p.t + (withOpp && p.o ? " v " + p.o : "") + "</i>" + tags.join("") + extra + "</span>";
 }
 function matchFilter(t, P) {
   const f = S.filter; if (!f) return true;
@@ -799,7 +799,7 @@ function renderPlayersTable() {   // the Players tab's table, filtered by the se
   rows.sort((a, b) => key === "pos" ? (POS_ORDER[a.p.p] - POS_ORDER[b.p.p] || spotN(a.p) - spotN(b.p) || (a.p.rr || 99) - (b.p.rr || 99) || b.c - a.c) : key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
   $("pcount").textContent = rows.length + (rows.length === 1 ? " player" : " players");
   box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th data-s="pos">Pos</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
-      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true) + '</td><td title="His spot on his team (the RB1 / WR1 / TE1 your rules use) and his rank among the slate\'s same-role players">' + posCell(r.p) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
+      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true, true) + '</td><td title="His spot on his team (the RB1 / WR1 / TE1 your rules use) and his rank among the slate\'s same-role players">' + posCell(r.p) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
       + (S.truth ? '<p class="note"><span class="flag">!</span> = one of the week\'s real boomers on 3 tickets or fewer.</p>' : "");
 }
 function renderTab() {
@@ -1012,7 +1012,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261017152839";
+const BUILD = "20261017162944";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
