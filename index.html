@@ -90,6 +90,7 @@ tr.isbanned td{opacity:.55}
 .t-q{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
 .t-fav{background:transparent;color:var(--accent);border:1px solid var(--accent)} .t-dog{background:transparent;color:var(--warn);border:1px solid var(--warn)}
 .t-fill{background:transparent;color:var(--muted);border:1px dashed var(--muted)}
+.t-fit{background:var(--good);color:var(--accent-ink)} .t-bust{background:transparent;color:var(--bad);border:1px solid var(--bad)}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .tablewrap{max-height:68vh;overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
@@ -126,7 +127,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 4:29 PM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 5:51 PM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -205,6 +206,18 @@ const anyIn = (arr, s) => !!arr && arr.some(j => s.has(j));
 const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false, top5: true};
 const isTop5 = p => !!SKILL[p.p] && p.pr <= 5;   // an RB / WR / TE among the slate's top 5 at his position by projection (the same top 5 your tough-game filter spares)
 const DEFAULT_FILTERS = {tough: true, dogval: true, depth: true, dogdst: true};
+// THE CHEAP-PLAYER PROFILE (plan item 184). Cheap = an RB / WR / TE under $4,500.
+//   FIT  = a cheap TE1 (19% / 15% hit 15+ pts vs 6% / 10% base; 65% of the cheap players on real top-10 lineups) - stronger in a soft matchup (39% / 18%) or at 5%+ boom
+//   BUST = a cheap RB2 / TE2 or deeper (0-8%), or a cheap non-TE1 under 2.5% boom (5% / 8%)
+const isCheap = p => !!SKILL[p.p] && p.s < 4500;
+function cheapProfile(p) {
+  if (!isCheap(p)) return "";
+  if (p.dr === "TE1") return "fit";
+  const spot = parseInt(String(p.dr || "").replace(/\D/g, ""), 10) || 0;
+  if ((p.p === "RB" && spot >= 2) || (p.p === "TE" && spot >= 2) || p.w < 0.025) return "bust";
+  return "";
+}
+const cheapFitScore = p => cheapProfile(p) !== "fit" ? 0 : 1 + (p.ws === 2 ? 0.5 : 0) + (p.w >= 0.05 ? 0.5 : 0);
 function filteredOut(p, F) {   // LARRY'S BAN FILTERS (Sat 10-17) -> the reason a player is filtered out, or ""
   F = F || DEFAULT_FILTERS;
   const spot = parseInt(String(p.dr || "").replace(/\D/g, ""), 10) || 0;
@@ -266,11 +279,16 @@ function buildBook(W, K) {
   const ctx = makeCtx(W), {P, n, one, stackOf} = ctx, R = Object.assign({}, DEFAULT_RULES, K.rules || {});
   const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0;   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
   const FL = Object.assign({}, DEFAULT_FILTERS, K.filters || {});
-  P.forEach((p, i) => { if (banSet.has(p.n) || (K.banQ && p.st) || (floor > 0 && SKILL[p.p] && p.w < floor) || filteredOut(p, FL)) banned[i] = 1; });
+  const spotOf = p => parseInt(String(p.dr || "").replace(/\D/g, ""), 10) || 0;
+  P.forEach((p, i) => {
+    const underFloor = floor > 0 && SKILL[p.p] && p.w < floor && !(K.floorTE1 && p.dr === "TE1");   // the review's fix 2: a TE1 is never cut by the floor
+    const cheapDeep = K.cheapDepth && SKILL[p.p] && p.s < 4500 && ((p.p === "WR" && spotOf(p) >= 3) || (p.p === "RB" && spotOf(p) >= 2));   // fix 1
+    if (K.cheapBust && cheapProfile(p) === "bust" && (K.cheapBust !== "spots" || (p.p !== "WR" && spotOf(p) >= 2))) { banned[i] = 1; return; }   // the cheap-player profile: the bust profile never plays ("spots" = only the cheap RB2 / TE2-or-deeper)
+    if (banSet.has(p.n) || (K.banQ && p.st) || underFloor || cheapDeep || filteredOut(p, FL)) banned[i] = 1; });
   for (const q in stackOf) stackOf[q] = stackOf[q].filter(j => !banned[j]);
   const sk = P.filter(p => p.p !== "DST").map(p => p.own);
   const om = sk.reduce((a, b) => a + b, 0) / sk.length, osd = Math.sqrt(sk.reduce((a, b) => a + (b - om) ** 2, 0) / sk.length) || 1;
-  const base = P.map(p => baseScore(p, K, om, osd)), pair = new Float64Array(n * n);
+  const base = P.map(p => baseScore(p, K, om, osd) + (K.cheapFit ? K.cheapFit * cheapFitScore(p) : 0)), pair = new Float64Array(n * n);   // the fit profile's pull
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const v = pairScore(P[i], P[j], K); pair[i * n + j] = v; pair[j * n + i] = v; }
   const minSal = {RB: 1e9, WR: 1e9, TE: 1e9, DST: 1e9};
   for (const p of P) if (minSal[p.p] !== undefined) minSal[p.p] = Math.min(minSal[p.p], p.s);
@@ -283,7 +301,7 @@ function buildBook(W, K) {
   const rem = {}, recvOf = {};
   P.forEach((p, i) => { if (p.p === "QB" && p.q > 0 && stackOf[i].length && !banned[i]) { rem[i] = p.q; for (const j of stackOf[i]) (recvOf[j] = recvOf[j] || []).push(i); } });
   const nDST = P.filter(p => p.p === "DST").length, nTix = P.reduce((a, p) => a + (p.p === "QB" && p.q > 0 && stackOf[P.indexOf(p)].length ? p.q : 0), 0);
-  const capOf = j => P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : K.cap;
+  const capOf = j => P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : (K.cheapCap > 0 && SKILL[P[j].p] && P[j].s < 4000 ? Math.min(K.cap, K.cheapCap) : K.cap);   // fix 3: the cheap-player cap
   const capOK = (j, qi) => {   // not banned, and under the cap after holding room for the QBs he stacks with (other than this ticket's QB)
     if (banned[j]) return false;
     let hold = 0; for (const q of recvOf[j] || []) if (q !== qi) hold += Math.min(rem[q], Math.ceil(rem[q] * (1 + K.two) / stackOf[q].length));
@@ -567,6 +585,7 @@ function buildBook(W, K) {
     for (let j = 0; j < n; j++) bf[j] = base[j] * (P[j].p === "QB" ? 1 : Math.max(0.05, 1 - K.spread * use[j] / capOf(j)));
     const unit = GRID ? (unitSeq[qi] || [])[k - 1] : null;
     let nStack = unit ? unit.rs.length : (k <= Math.round(quota[qi] * K.two) && stackOf[qi].length >= 2) ? 2 : 1;
+    if (K.te1stack && nStack === 2) for (const j of stackOf[qi]) if (P[j].p === "TE" && P[j].dr === "TE1") bf[j] += K.te1stack;   // fix 4: a double stack leans to the QB's TE1
     const cuts = []; let done = null, donePcs = null;
     for (let tries = 0; tries < 14 && !done; tries++) {
       let t = null, pcs = null;
@@ -692,6 +711,9 @@ function chip(i, W, noPts, withOpp) {   // withOpp: "PIT v TB" (the Players list
   if (p.st) tags.push('<b class="tag t-q">Q</b>');
   const fd = p.fd !== undefined ? p.fd : favDog(W)[p.t], why = filteredOut(p, S.knobs.filters);
   if (!tags.length && p.tier === "breadth" && p.p !== "QB" && p.p !== "DST") tags.push('<b class="tag t-fill" title="Pool fill: in the pool only to widen it - no value pick, no matchup edge, not a market top-3">fill</b>');
+  const cp = cheapProfile(p);   // the cheap-player profile (plan item 184)
+  if (cp === "fit") tags.unshift('<b class="tag t-fit" title="Cheap-player profile: FIT - a TE1 under $4,500, the cheap profile that hits most (15-19% score 15+ vs 6-10% for cheap players overall; 28% land on a real top-10 lineup). Strongest in a soft matchup or at 5%+ boom.">fit</b>');
+  if (cp === "bust") tags.unshift('<b class="tag t-bust" title="Cheap-player profile: BUST - an RB2 / TE2 or deeper, or a non-TE1 under 2.5% boom, under $4,500 (0-8% score 15+). A highlight, not a ban: the picker still plays them - cutting them all cost top-0.1% tickets in the tests.">bust</b>');
   if (fd === 2) tags.unshift('<b class="tag t-fav" title="His team is a 3+ point favourite">fav</b>'); else if (fd === 0) tags.unshift('<b class="tag t-dog" title="His team is a 3+ point underdog">dog</b>');
   let style = "", extra = "";
   if (S.color === "own") style = "background:color-mix(in srgb,var(--warn) " + Math.min(80, p.own * 2.4).toFixed(0) + "%,var(--chip))";
@@ -798,7 +820,7 @@ function renderPlayersTable() {   // the Players tab's table, filtered by the se
   const rows = P.map((p, i) => ({i, p, c: C.get(i) || 0})).filter(r => (!S.ppos || S.ppos === "ALL" || r.p.p === S.ppos) && (!q || fold(r.p.n + " " + r.p.t + " " + r.p.p).includes(q)));
   rows.sort((a, b) => key === "pos" ? (POS_ORDER[a.p.p] - POS_ORDER[b.p.p] || spotN(a.p) - spotN(b.p) || (a.p.rr || 99) - (b.p.rr || 99) || b.c - a.c) : key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
   $("pcount").textContent = rows.length + (rows.length === 1 ? " player" : " players");
-  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th data-s="pos">Pos</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
+  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket. <b class="tag t-fit">fit</b> / <b class="tag t-bust">bust</b> = the cheap-player profile (under $4,500): fit = a cheap TE1, the profile that hits most; bust = a cheap RB2 / TE2 or under 2.5% boom, the profile that hits least.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th data-s="pos">Pos</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
       + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true, true) + '</td><td title="His spot on his team (the RB1 / WR1 / TE1 your rules use) and his rank among the slate\'s same-role players">' + posCell(r.p) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
       + (S.truth ? '<p class="note"><span class="flag">!</span> = one of the week\'s real boomers on 3 tickets or fewer.</p>' : "");
 }
@@ -1012,7 +1034,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261017162944";
+const BUILD = "20261017175119";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
