@@ -48,6 +48,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,td[data-q]:focus-v
 .rulecheck b{font-family:var(--mono)}
 .rulecheck .hit{color:var(--warn);font-weight:600}
 .sep{border:0;border-top:1px solid var(--line);margin:14px 0 10px}
+#newver{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:5;display:flex;gap:10px;align-items:center;padding:8px 12px;border-radius:8px;background:var(--ink);color:var(--bg);font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+#newver button{border:0;border-radius:6px;padding:5px 10px;background:var(--accent);color:var(--accent-ink);font:600 13px var(--body);cursor:pointer}
 .exportbox{display:grid;gap:8px;padding:10px;border:1px solid var(--accent);border-radius:6px;margin-bottom:8px}
 .exportbox .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .exportbox textarea{width:100%;min-height:110px;font:11.5px/1.35 var(--mono);color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:6px;resize:vertical}
@@ -123,6 +125,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 10:19 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -795,6 +798,25 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); renderAll();
+const BUILD = "20261017101906";
+async function latestVersion() {
+  if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
+  try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
+}
+const goTo = v => location.replace(location.pathname + "?v=" + encodeURIComponent(v));
+(async () => {
+  const j = await latestVersion(); if (!j || j.v === BUILD) return;
+  let tried = null; try { tried = sessionStorage.getItem("comboLabTried"); } catch (e) {}
+  if (tried !== j.v) { try { sessionStorage.setItem("comboLabTried", j.v); } catch (e) {} goTo(j.v); }   // once per version: never a reload loop
+})();
+async function checkNewer() {
+  const j = await latestVersion(); if (!j || j.v === BUILD || document.getElementById("newver")) return;
+  const bar = document.createElement("div"); bar.id = "newver"; bar.setAttribute("role", "status");
+  bar.innerHTML = "A newer version is ready (" + esc(j.stamp || "") + ') <button id="loadnew">Load it</button>';
+  document.body.appendChild(bar); document.getElementById("loadnew").addEventListener("click", () => goTo(j.v));
+}
+setInterval(checkNewer, 180000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkNewer(); });
 </script>
 </body>
 </html>
