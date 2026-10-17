@@ -85,6 +85,7 @@ tr.isbanned td{opacity:.55}
 .t-soft{background:color-mix(in srgb,var(--good) 22%,transparent);color:var(--good)} .t-tough{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
 .t-val{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)} .t-stud{background:color-mix(in srgb,var(--qb) 20%,transparent);color:var(--qb)}
 .t-q{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.t-fav{background:transparent;color:var(--accent);border:1px solid var(--accent)} .t-dog{background:transparent;color:var(--warn);border:1px solid var(--warn)}
 .t-fill{background:transparent;color:var(--muted);border:1px dashed var(--muted)}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .tablewrap{max-height:68vh;overflow:auto}
@@ -114,6 +115,8 @@ table.grid td.gc.miss{box-shadow:inset 0 0 0 2px var(--bad)}
 table.grid tr.sum td{font-weight:600;border-top:2px solid var(--line)}
 table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 .rowlab{font-size:12px}
+.psearch{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.psearch input{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:13px var(--body)}
 .muted{color:var(--muted)}
 </style>
 </head>
@@ -142,6 +145,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
     <hr class="sep">
     <h2>Banned players</h2>
     <p class="note">Tick Ban on any player in the Players tab (or "Ban him" in Pairs). Bans hold in every week and are saved in this browser. A banned QB's tickets go to the other QBs.</p>
+    <label class="rule"><input type="checkbox" id="banq"><span>Also ban everyone tagged Q</span><small>Questionable before the games. Off by default. A banned QB's tickets go to the other QBs.</small></label>
     <div id="banlist"></div>
     <div class="btnrow"><button class="btn" id="reset">Reset knobs</button><button class="btn" id="copyk">Copy settings</button></div>
     <p class="note" id="copied"></p>
@@ -157,6 +161,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
         <input type="range" id="scrub" min="0" max="150" value="150" step="1" aria-label="Tickets filled so far">
         <span class="stat" id="scrubv">150 / 150</span>
         <button class="btn" id="export">Export tickets</button>
+        <label class="stat" id="bsortwrap" hidden>sort <select id="bsort"><option value="order">as built</option><option value="pts">real points, high to low</option></select></label>
         <label class="stat">speed <select id="speed"><option value="260">slow</option><option value="90" selected>normal</option><option value="25">fast</option></select></label>
       </div>
       <div class="stat" id="boardstat"></div>
@@ -235,7 +240,7 @@ function buildBook(W, K) {
   const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
   const ctx = makeCtx(W), {P, n, one, stackOf} = ctx, R = Object.assign({}, DEFAULT_RULES, K.rules || {});
   const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0;   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
-  P.forEach((p, i) => { if (banSet.has(p.n) || (floor > 0 && SKILL[p.p] && p.w < floor)) banned[i] = 1; });
+  P.forEach((p, i) => { if (banSet.has(p.n) || (K.banQ && p.st) || (floor > 0 && SKILL[p.p] && p.w < floor)) banned[i] = 1; });
   for (const q in stackOf) stackOf[q] = stackOf[q].filter(j => !banned[j]);
   const sk = P.filter(p => p.p !== "DST").map(p => p.own);
   const om = sk.reduce((a, b) => a + b, 0) / sk.length, osd = Math.sqrt(sk.reduce((a, b) => a + (b - om) ** 2, 0) / sk.length) || 1;
@@ -441,12 +446,14 @@ const RULES = [
 const LAB = window.LAB;
 const S = {week: LAB.weeks.length - 1, book: "mine", truth: false, color: "pos", tab: "results", view: "tickets", shown: 150, sel: null, filter: null, game: null, sort: null,
   knobs: defaultKnobs()};
-function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; return k; }
+function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; return k; }
 try { const saved = JSON.parse(localStorage.getItem("comboLabKnobs") || "null");
   if (saved) { for (const k of KNOBS) if (typeof saved[k.k] === "number") S.knobs[k.k] = saved[k.k];
     if (saved.rules) for (const r of RULES) if (typeof saved.rules[r.k] === "boolean") S.knobs.rules[r.k] = saved.rules[r.k];
-    if (Array.isArray(saved.bans)) S.knobs.bans = saved.bans.filter(x => typeof x === "string").sort(); } } catch (e) {}
+    if (Array.isArray(saved.bans)) S.knobs.bans = saved.bans.filter(x => typeof x === "string").sort();
+    if (typeof saved.banQ === "boolean") S.knobs.banQ = saved.banQ; } } catch (e) {}
 const isBanned = n => S.knobs.bans.includes(n);
+const isOut = p => isBanned(p.n) || (S.knobs.banQ && !!p.st);   // off every ticket: a name ban, or a Q tag while "ban everyone tagged Q" is on
 function toggleBan(name) { S.knobs.bans = isBanned(name) ? S.knobs.bans.filter(x => x !== name) : S.knobs.bans.concat(name).sort(); renderBans(); scheduleRebuild(); }
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
@@ -478,13 +485,23 @@ function hotSet(W) {   // the week's real boomers, as the audit defined them: th
   return new Set(sk.concat(qb));
 }
 function sortedGames(W) { return W.pre.games.slice().sort((a, b) => (b.total || 0) - (a.total || 0)); }
+const FD = new Map();
+function favDog(W) {   // team -> 2 = a 3+ point favourite, 0 = a 3+ point underdog, 1 = neither (the line Larry's bring-back rules use)
+  if (FD.has(W)) return FD.get(W);
+  const m = {};
+  for (const g of W.pre.games) if (g.spread_a !== null && g.spread_a !== undefined) { m[g.a] = g.spread_a >= 3 ? 2 : g.spread_a <= -3 ? 0 : 1; m[g.b] = -g.spread_a >= 3 ? 2 : -g.spread_a <= -3 ? 0 : 1; }
+  for (const p of W.pre.players) if (p.p === "QB" && p.gs !== undefined) m[p.t] = p.gs;
+  FD.set(W, m); return m;
+}
 function chip(i, W, noPts) {
   const p = W.pre.players[i], tags = [];
   if (SKILL[p.p]) { if (p.ws === 2) tags.push('<b class="tag t-soft">S</b>'); if (p.ws === 0) tags.push('<b class="tag t-tough">T</b>'); }
   if (p.val) tags.push('<b class="tag t-val">V</b>');
   if (SKILL[p.p] && p.mkb <= 1) tags.push('<b class="tag t-stud">' + (p.mkb === 0 ? "#1" : "#2-3") + "</b>");
   if (p.st) tags.push('<b class="tag t-q">Q</b>');
+  const fd = favDog(W)[p.t];
   if (!tags.length && p.tier === "breadth" && p.p !== "QB" && p.p !== "DST") tags.push('<b class="tag t-fill" title="Pool fill: in the pool only to widen it - no value pick, no matchup edge, not a market top-3">fill</b>');
+  if (fd === 2) tags.unshift('<b class="tag t-fav" title="His team is a 3+ point favourite">fav</b>'); else if (fd === 0) tags.unshift('<b class="tag t-dog" title="His team is a 3+ point underdog">dog</b>');
   let style = "", extra = "";
   if (S.color === "own") style = "background:color-mix(in srgb,var(--warn) " + Math.min(80, p.own * 2.4).toFixed(0) + "%,var(--chip))";
   if (S.color === "weak" && SKILL[p.p]) style = p.ws === 2 ? "background:color-mix(in srgb,var(--good) 32%,var(--chip))" : p.ws === 0 ? "background:color-mix(in srgb,var(--bad) 26%,var(--chip))" : "";
@@ -492,7 +509,7 @@ function chip(i, W, noPts) {
   if (S.truth) { const pt = W.post.pts[i]; if (!noPts) extra = " <i>" + pt.toFixed(1) + "</i>";
     if (S.color === "pts") style = pt >= 20 ? "background:color-mix(in srgb,var(--good) 48%,var(--chip))" : pt >= 12 ? "background:color-mix(in srgb,var(--good) 20%,var(--chip))" : pt <= 4 ? "background:color-mix(in srgb,var(--bad) 22%,var(--chip))" : ""; }
   const title = p.n + " · " + p.p + " " + p.t + " v " + p.o + " · " + fmt$(p.s) + " · our own% " + p.own + " · boom " + (p.w * 100).toFixed(1) + "%" + (p.role ? " · " + p.role : "");
-  return '<span class="chip p-' + p.p + (S.sel === i ? " sel" : "") + (isBanned(p.n) ? " banned" : "") + '" data-i="' + i + '" style="' + style + '" title="' + esc(title) + '"><b>' + esc(shortName(p.n)) + "</b> <i>" + p.t + "</i>" + tags.join("") + extra + "</span>";
+  return '<span class="chip p-' + p.p + (S.sel === i ? " sel" : "") + (isOut(p) ? " banned" : "") + '" data-i="' + i + '" style="' + style + '" title="' + esc(title) + '"><b>' + esc(shortName(p.n)) + "</b> <i>" + p.t + "</i>" + tags.join("") + extra + "</span>";
 }
 function matchFilter(t, P) {
   const f = S.filter; if (!f) return true;
@@ -522,16 +539,17 @@ function renderMain(animFrom) {
   renderBoard(W, B, n, animFrom);
 }
 function renderBoard(W, B, n, animFrom) {
-  const P = W.pre.players, html = [];
-  for (let k = 0; k < n; k++) {
-    if (!matchFilter(B.tickets[k], P)) continue;
+  const P = W.pre.players, html = [], ks = [];
+  for (let k = 0; k < n; k++) if (matchFilter(B.tickets[k], P)) ks.push(k);
+  if (S.truth && S.bsort === "pts") { const ord = ks.map(k => [tpts(B.tickets[k], W), k]).sort((a, b) => b[0] - a[0] || a[1] - b[1]); ks.length = 0; for (const [, k] of ord) ks.push(k); }
+  for (const k of ks) {
     const t = B.tickets[k].slice().sort((a, b) => POS_ORDER[P[a].p] - POS_ORDER[P[b].p] || P[b].s - P[a].s);
     const sal = t.reduce((a, j) => a + P[j].s, 0);
     let right = esc(B.why[k] || "");
     if (S.truth) { const pts = tpts(t, W), rk = rankOf(W, pts); right = '<span class="' + (pts >= W.post.lines["0.1"] ? "flag" : "") + '">' + pts.toFixed(1) + (rk <= 5000 ? " #" + rk.toLocaleString() : "") + "</span>"; }
     html.push('<div class="tk' + (animFrom !== undefined && k >= animFrom ? " new" : "") + '"><span class="no">' + (k + 1) + '</span><span class="chips">' + t.map(j => chip(j, W)).join("") + '</span><span class="stat">' + fmt$(sal) + '</span><span class="stat">' + right + "</span></div>");
   }
-  $("view").innerHTML = '<div class="legend"><span><i class="sw" style="background:var(--qb)"></i>QB</span><span><i class="sw" style="background:var(--rb)"></i>RB</span><span><i class="sw" style="background:var(--wr)"></i>WR</span><span><i class="sw" style="background:var(--te)"></i>TE</span><span><i class="sw" style="background:var(--dst)"></i>DST</span><span><b class="tag t-soft">S</b> soft matchup</span><span><b class="tag t-tough">T</b> tough</span><span><b class="tag t-val">V</b> value pick</span><span><b class="tag t-stud">#1</b> market rank</span><span><b class="tag t-q">Q</b> questionable</span><span><b class="tag t-fill">fill</b> pool fill, no reason tag</span>' + (S.truth ? '<span>right column = real points and rank; <b class="flag">red</b> = top 0.1%</span>' : "") + "</div>"
+  $("view").innerHTML = '<div class="legend"><span><i class="sw" style="background:var(--qb)"></i>QB</span><span><i class="sw" style="background:var(--rb)"></i>RB</span><span><i class="sw" style="background:var(--wr)"></i>WR</span><span><i class="sw" style="background:var(--te)"></i>TE</span><span><i class="sw" style="background:var(--dst)"></i>DST</span><span><b class="tag t-soft">S</b> soft matchup</span><span><b class="tag t-tough">T</b> tough</span><span><b class="tag t-val">V</b> value pick</span><span><b class="tag t-stud">#1</b> market rank</span><span><b class="tag t-q">Q</b> questionable</span><span><b class="tag t-fill">fill</b> pool fill, no reason tag</span><span><b class="tag t-fav">fav</b> / <b class="tag t-dog">dog</b> 3+ point favourite / underdog</span>' + (S.truth ? '<span>right column = real points and rank; <b class="flag">red</b> = top 0.1%</span>' : "") + "</div>"
     + '<div class="board" id="board">' + (html.join("") || '<p class="note" style="padding:10px">No tickets here yet - press Play, or clear the filter.</p>') + "</div>";
   if (animFrom !== undefined) { const b = $("board"); b.scrollTop = b.scrollHeight; }
 }
@@ -578,6 +596,18 @@ function bookLine(W, name, tickets) {
   const hot = hotSet(W), pts = tickets.map(t => tpts(t, W)), best = Math.max(...pts), hk = tickets.map(t => t.filter(j => hot.has(j)).length);
   return "<tr><td>" + name + '</td><td class="num">' + best.toFixed(1) + '</td><td class="num">#' + rankOf(W, best).toLocaleString() + '</td><td class="num">' + pts.filter(p => p >= W.post.lines["1"]).length + '</td><td class="num">' + pts.filter(p => p >= W.post.lines["0.1"]).length + '</td><td class="num">' + hk.filter(x => x >= 4).length + '</td><td class="num">' + hk.filter(x => x >= 5).length + "</td></tr>";
 }
+const fold = x => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]+/g, "");
+function renderPlayersTable() {   // the Players tab's table, filtered by the search box (name, team or position; accents and case ignored)
+  const box = $("ptable"); if (!box) return;
+  const W = wk(), P = W.pre.players, B = currentBook(), n = Math.min(S.shown, B.tickets.length), C = counts(B, n);
+  const hot = S.truth ? hotSet(W) : new Set(), key = S.sort || "n", q = fold(S.psearch || "").trim();
+  const rows = P.map((p, i) => ({i, p, c: C.get(i) || 0})).filter(r => !q || fold(r.p.n + " " + r.p.t + " " + r.p.p).includes(q));
+  rows.sort((a, b) => key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
+  $("pcount").textContent = rows.length + (rows.length === 1 ? " player" : " players");
+  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
+      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
+      + (S.truth ? '<p class="note"><span class="flag">!</span> = one of the week\'s real boomers on 3 tickets or fewer.</p>' : "");
+}
 function renderTab() {
   const W = wk(), P = W.pre.players, B = currentBook(), n = Math.min(S.shown, B.tickets.length), C = counts(B, n), body = $("tabbody");
   const truthOnly = '<p class="hidden-truth">Turn on the truth layer to judge this against what really happened. The combiner never sees it.</p>';
@@ -585,7 +615,7 @@ function renderTab() {
     const nonQB = [...C].filter(([j]) => P[j].p !== "QB").map(([, v]) => v);
     let h = '<div class="kpis"><div class="kpi"><span>Tickets</span><b>' + n + '</b></div><div class="kpi"><span>Players used</span><b>' + C.size + '</b></div><div class="kpi"><span>Most-used player</span><b>' + (nonQB.length ? Math.max(...nonQB) : 0) + "</b></div></div>";
     const ctx = makeCtx(W), off = Object.fromEntries(RULES.map(r => [r.k, false]));
-    if (S.knobs.bans.length) { const bs = new Set(P.map((p, i) => isBanned(p.n) ? i : -1).filter(i => i >= 0)); let bt = 0; for (let k = 0; k < n; k++) if (B.tickets[k].some(j => bs.has(j))) bt++;
+    if (S.knobs.bans.length || S.knobs.banQ) { const bs = new Set(P.map((p, i) => isOut(p) ? i : -1).filter(i => i >= 0)); let bt = 0; for (let k = 0; k < n; k++) if (B.tickets[k].some(j => bs.has(j))) bt++;
       h += '<p class="note"><b class="' + (bt ? "flag" : "") + '">' + bt + "</b> of these tickets carry a banned player" + (S.book === "mine" ? "" : " (this saved book was built before your bans)") + ".</p>"; }
     h += '<h2>Rule check</h2><p class="note">Tickets in this book that each rule would catch. Zero for every rule that is on.</p><div class="rulecheck">' + RULES.map(r => { const R1 = Object.assign({}, off, {[r.k]: true}); let c = 0;
       for (let k = 0; k < n; k++) if (ticketBreaks(ctx, B.tickets[k], R1).length) c++;
@@ -600,13 +630,8 @@ function renderTab() {
     body.innerHTML = h; return;
   }
   if (S.tab === "players") {
-    const hot = S.truth ? hotSet(W) : new Set(), key = S.sort || "n";
-    const rows = P.map((p, i) => ({i, p, c: C.get(i) || 0}));
-    rows.sort((a, b) => key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
-    body.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
-      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n); return '<tr' + (bn ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
-      + (S.truth ? '<p class="note"><span class="flag">!</span> = one of the week\'s real boomers on 3 tickets or fewer.</p>' : "");
-    return;
+    body.innerHTML = '<div class="psearch"><input id="psearch" type="search" placeholder="Search a player, team or position" aria-label="Search players" value="' + esc(S.psearch || "") + '"><span class="stat" id="pcount"></span></div><div id="ptable"></div>';
+    renderPlayersTable(); return;
   }
   if (S.tab === "stacks") {
     const m = byQB(B, n, P), qbs = [...m.keys()].sort((a, b) => m.get(b).length - m.get(a).length);
@@ -704,6 +729,7 @@ async function saveCSV(btn) {
 }
 // ---------- controls ----------
 function renderBans() {
+  if ($("banq")) $("banq").checked = !!S.knobs.banQ;
   const el = $("banlist"); if (!el) return;
   el.innerHTML = S.knobs.bans.length ? '<div class="banlist">' + S.knobs.bans.map(n => '<button data-unban="' + esc(n) + '" title="Unban ' + esc(n) + '">' + esc(n) + " ✕</button>").join("") + '</div><button class="btn small" id="clearbans">Clear all bans</button>' : '<p class="note">None.</p>';
 }
@@ -725,15 +751,18 @@ $("weeks").innerHTML = LAB.weeks.map((w, k) => '<button data-w="' + k + '" aria-
 $("weeks").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; stopPlay(); S.week = +b.dataset.w; S.sel = null; S.filter = null; S.game = null; S.shown = 150; for (const x of $("weeks").children) x.setAttribute("aria-pressed", String(x === b)); renderAll(); });
 $("books").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; stopPlay(); setBook(b.dataset.b); S.shown = 150; renderAll(); });
 $("color").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.color = b.dataset.c; for (const x of $("color").children) x.setAttribute("aria-pressed", String(x === b)); renderAll(); });
-$("truth").addEventListener("change", e => { S.truth = e.target.checked; renderAll(); });
+$("truth").addEventListener("change", e => { S.truth = e.target.checked; $("bsortwrap").hidden = !S.truth; if (!S.truth) { S.bsort = "order"; $("bsort").value = "order"; } renderAll(); });
 $("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; setTab(b.dataset.t); renderTab(); });
 $("views").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; setView(b.dataset.v); renderMain(); });
 document.addEventListener("change", e => { if (e.target.id === "gamesel") { S.game = e.target.value; renderMain(); } });
+document.addEventListener("input", e => { if (e.target.id === "psearch") { S.psearch = e.target.value; renderPlayersTable(); } });
+document.addEventListener("change", e => { if (e.target.id === "bsort") { S.bsort = e.target.value; renderMain(); } });
 document.addEventListener("click", e => {
   if (e.target.id === "clearf") { S.filter = null; renderAll(); return; }
   if (e.target.id === "export") { renderExport(); return; }
   if (e.target.dataset && e.target.dataset.unban) { toggleBan(e.target.dataset.unban); return; }
   if (e.target.id === "clearbans") { S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
+  if (e.target.id === "banq") { S.knobs.banQ = e.target.checked; scheduleRebuild(); return; }
   if (e.target.id === "bansel" && S.sel !== null) { toggleBan(wk().pre.players[S.sel].n); return; }
   if (e.target.classList && e.target.classList.contains("banbox")) { toggleBan(e.target.dataset.name); return; }
   if (e.target.id === "closeexp") { $("exportbox").innerHTML = ""; return; }
@@ -762,7 +791,7 @@ $("play").addEventListener("click", () => {
   playing = setInterval(() => { const B = currentBook(); if (S.shown >= B.tickets.length) { stopPlay(); renderTab(); return; }
     S.shown++; renderMain(S.shown - 1); if (S.shown % 5 === 0 || S.shown === B.tickets.length) renderTab(); }, +$("speed").value);
 });
-$("reset").addEventListener("click", () => { const keep = S.knobs.bans; S.knobs = defaultKnobs(); S.knobs.bans = keep; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
+$("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = S.knobs.banQ; S.knobs = defaultKnobs(); S.knobs.bans = keep; S.knobs.banQ = keepQ; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); renderAll();
