@@ -126,7 +126,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 10:48 AM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 11:01 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -635,7 +635,7 @@ function renderTab() {
     body.innerHTML = h; return;
   }
   if (S.tab === "players") {
-    body.innerHTML = '<div class="psearch"><input id="psearch" type="search" placeholder="Search a player, team or position" aria-label="Search players" value="' + esc(S.psearch || "") + '"><span class="stat" id="pcount"></span></div><div class="seg" id="pposseg" role="group" aria-label="Show one position" style="margin-bottom:6px">' + ["ALL", "QB", "RB", "WR", "TE", "DST"].map(x => '<button data-pos="' + x + '" aria-pressed="' + ((S.ppos || "ALL") === x) + '">' + (x === "ALL" ? "All" : x) + "</button>").join("") + '</div><div id="ptable"></div>';
+    body.innerHTML = '<div class="psearch"><input id="psearch" type="search" placeholder="Search a player, team or position" aria-label="Search players" value="' + esc(S.psearch || "") + '"><span class="stat" id="pcount"></span>' + (S.knobs.bans.length ? '<button class="btn small" id="unbanall2">Unban all (' + S.knobs.bans.length + ")</button>" : "") + '</div><div class="seg" id="pposseg" role="group" aria-label="Show one position" style="margin-bottom:6px">' + ["ALL", "QB", "RB", "WR", "TE", "DST"].map(x => '<button data-pos="' + x + '" aria-pressed="' + ((S.ppos || "ALL") === x) + '">' + (x === "ALL" ? "All" : x) + "</button>").join("") + '</div><div id="ptable"></div>';
     renderPlayersTable(); return;
   }
   if (S.tab === "stacks") {
@@ -736,7 +736,7 @@ async function saveCSV(btn) {
 function renderBans() {
   if ($("banq")) $("banq").checked = !!S.knobs.banQ;
   const el = $("banlist"); if (!el) return;
-  el.innerHTML = S.knobs.bans.length ? '<div class="banlist">' + S.knobs.bans.map(n => '<button data-unban="' + esc(n) + '" title="Unban ' + esc(n) + '">' + esc(n) + " ✕</button>").join("") + '</div><button class="btn small" id="clearbans">Clear all bans</button>' : '<p class="note">None.</p>';
+  el.innerHTML = S.knobs.bans.length ? '<button class="btn small" id="clearbans">Unban all (' + S.knobs.bans.length + ')</button><div class="banlist">' + S.knobs.bans.map(n => '<button data-unban="' + esc(n) + '" title="Unban ' + esc(n) + '">' + esc(n) + " ✕</button>").join("") + "</div>" : '<p class="note">None.</p>';
 }
 function renderAll(anim) { if ($("exportbox").innerHTML && !anim) $("exportbox").innerHTML = ""; renderMain(anim); renderTab(); }
 function renderKnobs() {
@@ -768,7 +768,7 @@ document.addEventListener("click", e => {
   const pb = e.target.closest("#pposseg button");
   if (pb) { S.ppos = pb.dataset.pos; for (const x of pb.parentNode.children) x.setAttribute("aria-pressed", String(x === pb)); renderPlayersTable(); return; }
   if (e.target.dataset && e.target.dataset.unban) { toggleBan(e.target.dataset.unban); return; }
-  if (e.target.id === "clearbans") { S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
+  if (e.target.id === "clearbans" || e.target.id === "unbanall2") { const nb = S.knobs.bans.length; if (!nb || !confirm("Unban all " + nb + " players?")) return; S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
   if (e.target.id === "banq") { S.knobs.banQ = e.target.checked; scheduleRebuild(); return; }
   if (e.target.id === "bansel" && S.sel !== null) { toggleBan(wk().pre.players[S.sel].n); return; }
   if (e.target.classList && e.target.classList.contains("banbox")) { toggleBan(e.target.dataset.name); return; }
@@ -802,7 +802,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); renderAll();
-const BUILD = "20261017104845";
+const BUILD = "20261017110156";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
