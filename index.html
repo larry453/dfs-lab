@@ -637,7 +637,8 @@ function slotTicket(t, P) {
   return [by.QB[0], by.RB[0], by.RB[1], by.WR[0], by.WR[1], by.WR[2], by.TE[0], flex, by.DST[0]];
 }
 const csvCell = v => { const x = String(v); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
-let exportURL = null;
+let exportURL = null, lastCSV = "", lastFile = "";
+const inViewer = () => !!(window.claude && typeof window.claude.use === "function");
 function renderExport() {
   const W = wk(), P = W.pre.players, B = currentBook();
   const head = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DST", "Salary", "Projected"].concat(S.truth ? ["Points", "Rank"] : []).concat(["Ticket"]);
@@ -649,12 +650,27 @@ function renderExport() {
     row.push(k + 1); lines.push(row.map(csvCell).join(","));
   });
   const csv = lines.join("\r\n") + "\r\n", file = "combo-lab-" + W.slate + "-" + BOOK_FILE[S.book] + ".csv";
-  if (exportURL) URL.revokeObjectURL(exportURL);
-  exportURL = URL.createObjectURL(new Blob([csv], {type: "text/csv"}));
-  $("exportbox").innerHTML = '<div class="exportbox"><div class="row"><b>' + B.tickets.length + " tickets · Week " + W.week + " · " + BOOK_NAME[S.book] + (S.truth ? " · with real points" : "") + '</b><a class="btn primary" id="dlcsv" href="' + exportURL + '" download="' + file + '">Download CSV</a><button class="btn" id="copycsv">Copy</button><button class="btn small" id="closeexp">Close</button><span class="stat" id="expmsg"></span></div>'
+  lastCSV = csv; lastFile = file;
+  if (exportURL) { URL.revokeObjectURL(exportURL); exportURL = null; }
+  let dl;
+  if (inViewer()) dl = '<button class="btn primary" id="savecsv">Download CSV</button>';
+  else { exportURL = URL.createObjectURL(new Blob([csv], {type: "text/csv"})); dl = '<a class="btn primary" id="dlcsv" href="' + exportURL + '" download="' + file + '">Download CSV</a>'; }
+  $("exportbox").innerHTML = '<div class="exportbox"><div class="row"><b>' + B.tickets.length + " tickets · Week " + W.week + " · " + BOOK_NAME[S.book] + (S.truth ? " · with real points" : "") + "</b>" + dl + '<button class="btn" id="copycsv">Copy</button><button class="btn small" id="closeexp">Close</button><span class="stat" id="expmsg"></span></div>'
     + '<p class="note">DraftKings\' layout: QB, RB, RB, WR, WR, WR, TE, FLEX, DST, each cell "Name (DK ID)", plus salary and projection after. To put lineups on your DK entries they go through the usual upload step with your DKEntries export. Uploading this file by itself would create new entries.</p>'
     + '<textarea readonly id="csvtext" aria-label="The exported tickets as CSV"></textarea></div>';
   $("csvtext").value = csv;
+}
+async function saveCSV(btn) {
+  const msg = $("expmsg"), say = t => { if (msg) msg.textContent = t; };
+  const dl = await window.claude.use("downloads");
+  if (!dl) { btn.remove(); say("Downloads aren't available in this view - use Copy."); return; }
+  try { await dl.save({filename: lastFile, data: lastCSV}); say("Saved " + lastFile); }
+  catch (err) {
+    const code = err && err.code;
+    if (code === "declined") say("Download cancelled.");
+    else if (code === "rate_limited") say("A save prompt is already open.");
+    else { btn.remove(); say((code === "extension_not_enabled" || code === "rejected_extension" ? "CSV downloads aren't enabled in this view" : "Downloads aren't available in this view") + " - use Copy."); }
+  }
 }
 // ---------- controls ----------
 function renderAll(anim) { if ($("exportbox").innerHTML && !anim) $("exportbox").innerHTML = ""; renderMain(anim); renderTab(); }
@@ -681,6 +697,7 @@ document.addEventListener("click", e => {
   if (e.target.id === "clearf") { S.filter = null; renderAll(); return; }
   if (e.target.id === "export") { renderExport(); return; }
   if (e.target.id === "closeexp") { $("exportbox").innerHTML = ""; return; }
+  if (e.target.id === "savecsv") { saveCSV(e.target); return; }
   if (e.target.id === "copycsv") { const ta = $("csvtext"), msg = $("expmsg");
     try { navigator.clipboard.writeText(ta.value).then(() => { msg.textContent = "Copied"; }, () => { ta.select(); msg.textContent = "Press Ctrl+C to copy"; }); } catch (err) { ta.select(); msg.textContent = "Press Ctrl+C to copy"; } return; }
   if (e.target.id === "onlysel" && S.sel !== null) { S.filter = {type: "player", i: S.sel}; setView("tickets"); renderMain(); return; }
