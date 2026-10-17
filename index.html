@@ -125,7 +125,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 10:19 AM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 10:22 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -604,11 +604,11 @@ function renderPlayersTable() {   // the Players tab's table, filtered by the se
   const box = $("ptable"); if (!box) return;
   const W = wk(), P = W.pre.players, B = currentBook(), n = Math.min(S.shown, B.tickets.length), C = counts(B, n);
   const hot = S.truth ? hotSet(W) : new Set(), key = S.sort || "n", q = fold(S.psearch || "").trim();
-  const rows = P.map((p, i) => ({i, p, c: C.get(i) || 0})).filter(r => !q || fold(r.p.n + " " + r.p.t + " " + r.p.p).includes(q));
-  rows.sort((a, b) => key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
+  const rows = P.map((p, i) => ({i, p, c: C.get(i) || 0})).filter(r => (!S.ppos || S.ppos === "ALL" || r.p.p === S.ppos) && (!q || fold(r.p.n + " " + r.p.t + " " + r.p.p).includes(q)));
+  rows.sort((a, b) => key === "pos" ? (POS_ORDER[a.p.p] - POS_ORDER[b.p.p] || b.c - a.c || b.p.s - a.p.s) : key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
   $("pcount").textContent = rows.length + (rows.length === 1 ? " player" : " players");
-  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
-      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
+  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th data-s="pos">Pos</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
+      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true) + '</td><td>' + r.p.p + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
       + (S.truth ? '<p class="note"><span class="flag">!</span> = one of the week\'s real boomers on 3 tickets or fewer.</p>' : "");
 }
 function renderTab() {
@@ -633,7 +633,7 @@ function renderTab() {
     body.innerHTML = h; return;
   }
   if (S.tab === "players") {
-    body.innerHTML = '<div class="psearch"><input id="psearch" type="search" placeholder="Search a player, team or position" aria-label="Search players" value="' + esc(S.psearch || "") + '"><span class="stat" id="pcount"></span></div><div id="ptable"></div>';
+    body.innerHTML = '<div class="psearch"><input id="psearch" type="search" placeholder="Search a player, team or position" aria-label="Search players" value="' + esc(S.psearch || "") + '"><span class="stat" id="pcount"></span></div><div class="seg" id="pposseg" role="group" aria-label="Show one position" style="margin-bottom:6px">' + ["ALL", "QB", "RB", "WR", "TE", "DST"].map(x => '<button data-pos="' + x + '" aria-pressed="' + ((S.ppos || "ALL") === x) + '">' + (x === "ALL" ? "All" : x) + "</button>").join("") + '</div><div id="ptable"></div>';
     renderPlayersTable(); return;
   }
   if (S.tab === "stacks") {
@@ -763,6 +763,8 @@ document.addEventListener("change", e => { if (e.target.id === "bsort") { S.bsor
 document.addEventListener("click", e => {
   if (e.target.id === "clearf") { S.filter = null; renderAll(); return; }
   if (e.target.id === "export") { renderExport(); return; }
+  const pb = e.target.closest("#pposseg button");
+  if (pb) { S.ppos = pb.dataset.pos; for (const x of pb.parentNode.children) x.setAttribute("aria-pressed", String(x === pb)); renderPlayersTable(); return; }
   if (e.target.dataset && e.target.dataset.unban) { toggleBan(e.target.dataset.unban); return; }
   if (e.target.id === "clearbans") { S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
   if (e.target.id === "banq") { S.knobs.banQ = e.target.checked; scheduleRebuild(); return; }
@@ -798,7 +800,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); renderAll();
-const BUILD = "20261017101906";
+const BUILD = "20261017102228";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
