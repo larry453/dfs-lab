@@ -127,7 +127,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 8:04 PM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 10:33 PM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="combo">Combination grid</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -198,14 +198,14 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <script id="combiner">
 "use strict";
 // THE LAB'S COMBINER - reads ONLY week.pre (never week.post). Rules = the build's rule set (V6 + the house rules), line for line.
-const SAL_LO = 49500, SAL_HI = 50000;
+const SAL_LO = 49500, SAL_HI = 50000, SAL_FLOOR = SAL_LO;
 const MAXP = {QB: 1, RB: 3, WR: 4, TE: 2, DST: 1}, SKILL = {RB: 1, WR: 1, TE: 1};
 const LIFT = {}; for (const [side, a, b, v] of window.LAB.lifts) LIFT[side + "|" + a + "|" + b] = v;
 const teOK = (a, b) => (a.s >= 6000 && b.s >= 6000) || (a.te10 === 1 && b.te10 === 1);
 const anyIn = (arr, s) => !!arr && arr.some(j => s.has(j));
-const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false, top5: true};
+const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false, top5: true, valte: false};
 const isTop5 = p => !!SKILL[p.p] && p.pr <= 5;   // an RB / WR / TE among the slate's top 5 at his position by projection (the same top 5 your tough-game filter spares)
-const DEFAULT_FILTERS = {tough: true, dogval: true, depth: true, dogdst: true};
+const DEFAULT_FILTERS = {tough: true, dogval: true, depth: true, dogdst: true, bust: false};
 // THE CHEAP-PLAYER PROFILE (plan item 184). Cheap = an RB / WR / TE under $4,500.
 //   FIT  = a cheap TE1 (19% / 15% hit 15+ pts vs 6% / 10% base; 65% of the cheap players on real top-10 lineups) - stronger in a soft matchup (39% / 18%) or at 5%+ boom
 //   BUST = a cheap RB2 / TE2 or deeper (0-8%), or a cheap non-TE1 under 2.5% boom (5% / 8%)
@@ -252,6 +252,7 @@ function filteredOut(p, F) {   // LARRY'S BAN FILTERS (Sat 10-17) -> the reason 
   F = F || DEFAULT_FILTERS;
   const spot = parseInt(String(p.dr || "").replace(/\D/g, ""), 10) || 0;
   if (F.depth && SKILL[p.p] && spot > (p.p === "WR" ? 3 : 2)) return "past " + p.p + (p.p === "WR" ? "3" : "2");                     // no RB3+, WR4+, TE3+
+  if (F.bust && ((p.p === "RB" && spot >= 2) || (p.p === "WR" && spot === 3) || (p.p === "TE" && p.s < 4000 && spot >= 2))) return "bust profile (" + (p.dr || p.p) + ")";   // 10-17: RB2 / WR3 / cheap TE2
   if (F.tough && SKILL[p.p] && p.ws === 0 && p.fd !== 2 && !(p.pr <= 5)) return "tough game, not a favourite, not a top-5 " + p.p;   // favourites + the top 5 stay
   if (F.dogval && SKILL[p.p] && p.val && p.fd === 0 && p.ws === 1 && !(p.mkb <= 1) && !p.st) return "underdog value pick, no other tag";
   if (F.dogdst && p.p === "DST" && p.fd === 0) return "underdog DST";
@@ -294,7 +295,7 @@ function baseScore(p, K, om, osd) {
   if (p.p !== "DST") v += K.chalk * 0.06 * (p.own - om) / osd;
   if (SKILL[p.p]) v += K.weak * (p.ws === 2 ? 0.05 : p.ws === 0 ? -0.04 : 0);
   if (SKILL[p.p]) v += K.stud * (p.mkb === 0 ? 0.09 : p.mkb === 1 ? 0.05 : p.mkb === 2 ? 0.015 : 0);
-  if (p.val) v += K.value * 0.05;
+  if (p.val && (!(K.valTE || (K.rules && K.rules.valte)) || p.p === "TE")) v += K.value * 0.05;   // K.valTE (Larry 10-17, the bust profile): the value tag pays only a TE - value-tagged RBs / WRs bust ~2x and boom below base in both sets
   return v + p.proj * 0.0004;
 }
 function pairScore(a, b, K) {   // the measured 2018-22 boom-together lift, weighted by both players' boom chances
@@ -305,6 +306,7 @@ function pairScore(a, b, K) {   // the measured 2018-22 boom-together lift, weig
   return wgt * (L - 1) * a.w * b.w * 2.5;
 }
 function buildBook(W, K) {
+  const SAL_LO = K.salLo > 0 ? K.salLo : SAL_FLOOR;   // a per-build salary floor (switch; off = the lab's $49,500)
   const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
   const ctx = makeCtx(W), {P, n, one, stackOf} = ctx, R = Object.assign({}, DEFAULT_RULES, K.rules || {});
   const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0;   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
@@ -629,13 +631,14 @@ function buildBook(W, K) {
     }
     LS = P.map((p, i) => i).filter(i => SKILL[P[i].p] && !banned[i] && profileScore(P[i]) <= 0 && P[i].s < 6000).sort((a, b) => base[b] - base[a] || a - b).slice(0, K.lsPool || 40);
   }
-  const CG = K.mode === "combo" && !GRID && !CORE, tgt = new Float64Array(n), pairUse = CG ? new Int32Array(n * n) : null, unitUse = new Map(); let cgFallbacks = 0;
+  const CG = K.mode === "combo" && !GRID && !CORE, tgt = new Float64Array(n), pairUse = CG ? new Int32Array(n * n) : null, unitUse = new Map(), triUse = new Set(); let cgFallbacks = 0;
+  const gameKey = P.map(p => [p.t, p.o].sort().join("@"));
   if (CG) {   // the ticket budgets: each pool player's share of the seats follows his knob score (water-filled under the cap)
     const lean = K.lean ?? 1;
     const waterFill = (ids, seats) => { const fixed = new Set();
       for (let it = 0; it < 10; it++) {
         const free = ids.filter(i => !fixed.has(i)); let left = seats; for (const i of fixed) left -= tgt[i];
-        const w = free.map(i => Math.pow(Math.max(0, base[i]), lean)), sw = w.reduce((a, b) => a + b, 0);
+        const w = free.map(i => Math.pow(Math.max(0, K.cgBoom ? P[i].w : base[i]), lean)), sw = w.reduce((a, b) => a + b, 0);
         if (sw <= 0 || left <= 0) { for (const i of free) tgt[i] = 0; break; }
         let any = false; free.forEach((i, x) => { tgt[i] = left * w[x] / sw; if (tgt[i] > capOf(i)) { tgt[i] = capOf(i); fixed.add(i); any = true; } });
         if (!any) break; } };
@@ -643,7 +646,8 @@ function buildBook(W, K) {
     waterFill(P.map((p, i) => i).filter(i => P[i].p === "DST" && !banned[i]), nTix);
   }
   function cgKey(t, j, qi) {   // budget left first, then the combinations this player adds that the book does not hold yet, then the knob score
-    let nw = 0; for (const x of t) if (!pairUse[(x < j ? x : j) * n + (x < j ? j : x)]) nw += x === qi ? 2 : 1;
+    let nw = 0; for (const x of t) if (!pairUse[(x < j ? x : j) * n + (x < j ? j : x)]) { nw += x === qi ? 2 : 1; if (K.cgGame && x !== qi && gameKey[x] === gameKey[j]) nw += K.cgGame; }
+    if (K.cgDepth) for (const x of t) if (x !== qi && !triUse.has(qi * n * n + (x < j ? x : j) * n + (x < j ? j : x))) nw += K.cgDepth;
     return (use[j] + 0.5 < tgt[j] ? 1000 : 0) + 10 * nw + gain(t, j);
   }
   function cgUnits(qi, nStack) {   // this QB's receiver units (his top 5 singles, or his top 10 pairs), the most overdue first by the rotation
@@ -654,7 +658,7 @@ function buildBook(W, K) {
       .sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1)).slice(0, nStack === 2 ? 10 : 5);
     const f = K.focus ?? 1, w = sc.map((u, r) => Math.pow(1 / (r + 1), f)), ws = w.reduce((a, b) => a + b, 0) || 1;
     const used = sc.map(u => unitUse.get(u.id) || 0), tot = used.reduce((a, b) => a + b, 0) + 1;
-    return sc.map((u, r) => ({...u, due: tot * w[r] / ws - used[r]})).sort((a, b) => b.due - a.due || b.v - a.v);
+    return sc.map((u, r) => ({...u, due: (K.cgEvery && !used[r] ? 1e6 : 0) + tot * w[r] / ws - used[r]})).sort((a, b) => b.due - a.due || b.v - a.v);
   }
   for (const {qi, k} of seq) {
     const Q = P[qi];
@@ -709,7 +713,7 @@ function buildBook(W, K) {
       for (let a = 0; a < done.length; a++) for (let b = a + 1; b < done.length; b++) { const x = done[a], y = done[b];
         if ((x === qi && ssr.has(y)) || (y === qi && ssr.has(x))) continue; pair[x * n + y] -= K.rotate; pair[y * n + x] -= K.rotate; } }
     if (donePcs && CORE) for (const pc of donePcs) if (pc.startsWith("core:")) coreUse.set(pc.slice(5), (coreUse.get(pc.slice(5)) || 0) + 1);
-    if (CG) { for (let a = 0; a < done.length; a++) for (let b = a + 1; b < done.length; b++) { const x = Math.min(done[a], done[b]), y = Math.max(done[a], done[b]); pairUse[x * n + y]++; }
+    if (CG) { for (let a = 0; a < done.length; a++) for (let b = a + 1; b < done.length; b++) { const x = Math.min(done[a], done[b]), y = Math.max(done[a], done[b]); pairUse[x * n + y]++; if (x !== qi && y !== qi) triUse.add(qi * n * n + x * n + y); }
       if (donePcs) for (const pc of donePcs) if (pc.startsWith("unit:")) unitUse.set(pc.slice(5), (unitUse.get(pc.slice(5)) || 0) + 1); }
     if (donePcs && !CORE && !CG) for (const pc of donePcs) { const key = unit.id + "|" + pc; cellUse.set(key, (cellUse.get(key) || 0) + 1); pieceUse.set(pc, (pieceUse.get(pc) || 0) + 1); }
     const ss = new Set(stackOf[qi]); const nss = done.filter(j => ss.has(j)).length;
@@ -735,6 +739,7 @@ const KNOBS = [
   {k: "spread", label: "Spread the players", min: 0, max: 1, step: 0.05, def: 0.6, help: "How fast a player's pull fades as he lands on more tickets."},
   {k: "cap", label: "Max tickets per player", min: 15, max: 60, step: 1, def: 30, help: "Hard ceiling on any one RB, WR or TE. QBs follow their ticket quotas; DSTs get room, since the pool holds only a handful."},
   {k: "focus", label: "Stack focus (Grid + Combination grid)", min: 0, max: 3, step: 0.1, def: 1, help: "How steeply each QB's tickets favour his best stack unit (0 = every receiver gets equal turns)."},
+  {k: "profile", label: "Profile pull", min: 0, max: 0.2, step: 0.005, def: 0, help: "How much the position profiles count: underdog + soft QBs, RB1s, WR1s and soft-matchup TE1s up; RB2s, WR2s / WR3s, value-tagged backs and receivers, close games and middle matchups down. In the Combination grid it shapes each player's ticket budget."},
   {k: "lean", label: "Ticket budgets follow the score (Combination grid)", min: 0, max: 3, step: 0.1, def: 1, help: "Each player's share of the tickets follows his score from the knobs above: 1 = in proportion, higher = more to the top players, lower = flatter."},
   {k: "cover", label: "Coverage (Grid book)", min: 0, max: 0.3, step: 0.01, def: 0.08, help: "How hard each new ticket reaches for stack-and-piece pairings it has not tried yet, versus the strongest ones."},
   {k: "minBoom", label: "Skip players under this boom chance", min: 0, max: 0.05, step: 0.0025, def: 0, help: "RB / WR / TE below it are never played (0 = off). Stops salary dumps like a 0.3% tight end.", pct: true},
@@ -750,6 +755,7 @@ const RULES = [
   {k: "onespot", label: "One player per team per position", help: "His QB's receivers excepted."},
   {k: "top5", label: "At most 3 top-5 players per ticket", help: "No more than 3 RB / WR / TE from the slate's top 5 at their position (by projection) on one ticket. You added this on 10-17."},
   {k: "bbforce", label: "Underdog QB carries the favourite's RB1", help: "For 3+ point underdogs. You dropped this on 10-16, so it starts off."},
+  {k: "valte", label: "Value tag pays tight ends only", help: "The value bonus counts only for a TE. Value-tagged RBs and WRs bust about twice as often and boom less than the rest, in both test sets (the bust profile, 10-17); value-tagged TEs do better."},
 ];
 const LAB = window.LAB;
 const S = {week: LAB.weeks.length - 1, book: "mine", truth: false, color: "pos", tab: "results", view: "tickets", shown: 150, sel: null, filter: null, game: null, sort: null,
@@ -1063,6 +1069,7 @@ const FILTERS = [
   {k: "dogval", label: "Underdog value picks", help: "A value pick on an underdog when dog + V are his only tags."},
   {k: "depth", label: "Pool depth", help: "No RB3+, no WR4+, no TE3+ (his spot on his own team)."},
   {k: "dogdst", label: "Underdog DSTs", help: "Only favourite DSTs and DSTs with no tag."},
+  {k: "bust", label: "Bust profile: RB2, WR3, cheap TE2", help: "The groups the real winners use far less than our pool holds them, in 2026 Weeks 2-5 AND the 29 earlier slates: RB2s (a quarter of the backs, ~5% of the winning RB seats), WR3s, and TE2s under $4,000. Added 10-17."},
 ];
 function renderBans() {
   if ($("banq")) $("banq").checked = !!S.knobs.banQ;
@@ -1147,7 +1154,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261017200401";
+const BUILD = "20261017223309";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
