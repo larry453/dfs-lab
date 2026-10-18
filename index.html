@@ -85,6 +85,7 @@ a.btn{text-decoration:none;display:inline-block}
 .stchip{font:inherit;font-size:11px;padding:2px 6px;border:1px solid var(--line, #8886);border-radius:3px;background:transparent;color:inherit;cursor:pointer}
 .stchip.on{border-color:var(--accent, #2b7);box-shadow:inset 0 0 0 1px var(--accent, #2b7);font-weight:700}
 .stchip.out{opacity:.5;text-decoration:line-through}
+.stchip.add{border-style:dashed}
 .tixbox.set{border-color:var(--accent, #2b7);font-weight:700}
 .banlist{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .banlist button{border:1px solid var(--line);background:var(--chip);color:var(--ink);border-radius:4px;padding:1px 6px;font:12px var(--body);cursor:pointer}
@@ -135,7 +136,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 11:13 AM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 11:28 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="combo">Combination grid</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -211,7 +212,7 @@ const MAXP = {QB: 1, RB: 3, WR: 4, TE: 2, DST: 1}, SKILL = {RB: 1, WR: 1, TE: 1}
 const LIFT = {}; for (const [side, a, b, v] of window.LAB.lifts) LIFT[side + "|" + a + "|" + b] = v;
 const teOK = (a, b) => (a.s >= 6000 && b.s >= 6000) || (a.te10 === 1 && b.te10 === 1);
 const anyIn = (arr, s) => !!arr && arr.some(j => s.has(j));
-const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false, top5: true, valte: false};
+const DEFAULT_RULES = {ownrb: true, trio: true, bbban: true, tebb: true, twote: true, dst: true, onespot: true, bbforce: false, top5: true, valte: false, stxonly: true};
 const isTop5 = p => !!SKILL[p.p] && p.pr <= 5;   // an RB / WR / TE among the slate's top 5 at his position by projection (the same top 5 your tough-game filter spares)
 const DEFAULT_FILTERS = {tough: true, dogval: true, depth: true, dogdst: true, bust: false};
 // THE CHEAP-PLAYER PROFILE (plan item 184). Cheap = an RB / WR / TE under $4,500.
@@ -319,6 +320,7 @@ function buildBook(W, K) {
   const ctx = makeCtx(W), {P, n, one, stackOf} = ctx, R = Object.assign({}, DEFAULT_RULES, K.rules || {});
   if (K.stx) for (let i = 0; i < n; i++) if (P[i].p === "QB" && Array.isArray(K.stx[P[i].n])) {   // Larry 10-18: his own stack partners for this QB (the QB stacks tab)
     const want = new Set(K.stx[P[i].n]); stackOf[i] = P.map((x, j) => j).filter(j => P[j].t === P[i].t && (P[j].p === "WR" || P[j].p === "TE") && want.has(P[j].n)); }
+  const onlyQ = {}; if (K.stx && R.stxonly) for (let i = 0; i < n; i++) if (P[i].p === "QB" && Array.isArray(K.stx[P[i].n])) for (const j of stackOf[i]) if (P[j].stk !== 1) onlyQ[j] = i;   // a partner Larry ADDED plays only with that QB
   const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0, keepSet = new Set(K.keep || []);   // keep: plays despite a filter / the floor (Larry 10-18)
   const TIX = {}; for (const nm in (K.tix || {})) { const v = Math.round(+K.tix[nm]); if (v > 0) TIX[nm] = Math.min(150, v); }   // the ticket overrides (Larry 10-18)   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
   const FL = Object.assign({}, DEFAULT_FILTERS, K.filters || {});
@@ -349,6 +351,7 @@ function buildBook(W, K) {
   const capOf = j => TIX[P[j].n] > 0 ? TIX[P[j].n] : P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : (K.cheapCap > 0 && SKILL[P[j].p] && P[j].s < 4000 ? Math.min(posCap(j), K.cheapCap) : posCap(j));   // fix 3: the cheap-player cap
   const capOK = (j, qi) => {   // not banned, and under the cap after holding room for the QBs he stacks with (other than this ticket's QB)
     if (banned[j]) return false;
+    if (onlyQ[j] !== undefined && onlyQ[j] !== qi) return false;   // an added stack partner stays with his QB (rule stxonly)
     let hold = 0; for (const q of recvOf[j] || []) if (q !== qi) hold += Math.min(rem[q], Math.ceil(rem[q] * (1 + K.two) / stackOf[q].length));
     return use[j] + hold < capOf(j); };
   const gain = (t, j) => { let v = bf[j]; for (const x of t) v += pair[j * n + x]; return v; };
@@ -680,10 +683,11 @@ function buildBook(W, K) {
     if (nStack === 2 && rs.length >= 2) { for (let a = 0; a < rs.length; a++) for (let b = a + 1; b < rs.length; b++) units.push([rs[a], rs[b]]); }
     else for (const r of rs) units.push([r]);
     const sc = units.map(u => ({rs: u, v: u.reduce((a, r) => a + base[r] + pair[qi * n + r], 0) + (u.length === 2 ? pair[u[0] * n + u[1]] : 0), id: qi + ":" + u.slice().sort((x, y) => x - y).join("-")}))
-      .sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1)).slice(0, nStack === 2 ? 10 : 5);
+      .sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1)).filter((u, r) => r < (nStack === 2 ? 10 : 5) || u.rs.some(x => onlyQ[x] === qi));
+    const owe = x => onlyQ[x] === qi && TIX[P[x].n] > 0 && use[x] < Math.min(1, TIX[P[x].n] / Math.max(1, quota[qi])) * (quota[qi] - rem[qi] + 1);   // an added partner behind his pace on this QB's tickets
     const f = K.focus ?? 1, w = sc.map((u, r) => Math.pow(1 / (r + 1), f)), ws = w.reduce((a, b) => a + b, 0) || 1;
     const used = sc.map(u => unitUse.get(u.id) || 0), tot = used.reduce((a, b) => a + b, 0) + 1;
-    return sc.map((u, r) => ({...u, due: (K.cgEvery && !used[r] ? 1e6 : 0) + tot * w[r] / ws - used[r]})).sort((a, b) => b.due - a.due || b.v - a.v);
+    return sc.map((u, r) => ({...u, due: (u.rs.some(owe) ? 1e7 : 0) + (K.cgEvery && !used[r] ? 1e6 : 0) + tot * w[r] / ws - used[r]})).sort((a, b) => b.due - a.due || b.v - a.v);
   }
   for (const {qi, k} of seq) {
     const Q = P[qi];
@@ -782,6 +786,7 @@ const RULES = [
   {k: "top5", label: "At most 3 top-5 players per ticket", help: "No more than 3 RB / WR / TE from the slate's top 5 at their position (by projection) on one ticket. You added this on 10-17."},
   {k: "bbforce", label: "Underdog QB carries the favourite's RB1", help: "For 3+ point underdogs. You dropped this on 10-16, so it starts off."},
   {k: "valte", label: "Value tag pays tight ends only", help: "The value bonus counts only for a TE. Value-tagged RBs and WRs bust about twice as often and boom less than the rest, in both test sets (the bust profile, 10-17); value-tagged TEs do better."},
+  {k: "stxonly", label: "Added stack partners stay with their QB", help: "A receiver you add as a QB's stack partner (QB stacks tab) plays only on that QB's tickets, never as a one-off on another QB's ticket. You asked for this on 10-18 (Knox shares Kincaid's tickets with Josh Allen)."},
 ];
 const LAB = window.LAB;
 const S = {week: LAB.weeks.length - 1, book: "mine", truth: false, color: "pos", tab: "results", view: "tickets", shown: 150, sel: null, filter: null, game: null, sort: null,
@@ -802,7 +807,8 @@ const NEVER = (window.LAB.neverPlay || []).slice();   // the standing never-play
 const npOn = n => NEVER.includes(n) && !S.knobs.npOff.includes(n);
 const isBanned = n => S.knobs.bans.includes(n) || npOn(n);
 const effBans = () => [...new Set(S.knobs.bans.concat(NEVER.filter(n => !S.knobs.npOff.includes(n))))];
-const isOut = p => isBanned(p.n) || (S.knobs.banQ && !!p.st) || (!!filteredOut(p, S.knobs.filters) && !S.knobs.keep.includes(p.n) && !(S.knobs.tix[p.n] > 0));   // off every ticket: a name ban, or a Q tag while "ban everyone tagged Q" is on
+const isOut = p => isBanned(p.n) || (S.knobs.banQ && !!p.st) || (!!filteredOut(p, S.knobs.filters) && !S.knobs.keep.includes(p.n) && !(S.knobs.tix[p.n] > 0));
+const poolOut = p => isOut(p) || (!S.knobs.keep.includes(p.n) && !(S.knobs.tix[p.n] > 0) && !!SKILL[p.p] && S.knobs.minBoom > 0 && p.w < S.knobs.minBoom && !(S.knobs.floorTE1 && p.dr === "TE1"));   // also under the boom floor (the combiner's own test)   // off every ticket: a name ban, or a Q tag while "ban everyone tagged Q" is on
 function toggleBan(name) {
   const pl = wk().pre.players.find(x => x.n === name), filt = !!(pl && filteredOut(pl, S.knobs.filters));
   if (NEVER.includes(name)) S.knobs.npOff = npOn(name) ? S.knobs.npOff.concat(name) : S.knobs.npOff.filter(x => x !== name);   // a never-play name toggles its own switch
@@ -1005,9 +1011,9 @@ function renderTab() {
     const m = byQB(B, n, P), qbs = [...m.keys()].sort((a, b) => m.get(b).length - m.get(a).length);
     const defOf = q => P.filter(x => x.t === P[q].t && (x.p === "WR" || x.p === "TE") && x.stk === 1).map(x => x.n);
     const qAll = P.map((x, i) => i).filter(i => P[i].p === "QB" && P[i].q > 0 && !isBanned(P[i].n)).sort((a, b) => (m.get(b) || []).length - (m.get(a) || []).length || P[a].n.localeCompare(P[b].n));
-    const editor = '<p class="note"><b>Stack partners.</b> Click a receiver to add or remove him as this QB\'s stack partner (highlighted = partner). Only a partner can share a ticket with his QB. Struck-through = out of the pool (a ban, a filter or under the boom floor; a ticket count in the Players tab lets him play).</p><div class="stx">'
+    const editor = '<p class="note"><b>Stack partners.</b> Click a receiver to add or remove him as this QB\'s stack partner (highlighted = partner). Only a partner can share a ticket with his QB. Dashed = a partner you added: he plays only on this QB\'s tickets (the rule "Added stack partners stay with their QB"). Struck-through = out of the pool (a ban, a filter or under the boom floor); a ticket count in the Players tab lets a filtered or under-the-floor player play.</p><div class="stx">'
       + qAll.map(q => { const cur = new Set(S.knobs.stx[P[q].n] || defOf(q)), mates = P.map((x, j) => j).filter(j => P[j].t === P[q].t && (P[j].p === "WR" || P[j].p === "TE")).sort((a, b) => (P[a].p === P[b].p ? 0 : P[a].p === "WR" ? -1 : 1) || spotN(P[a]) - spotN(P[b]));
-        return '<div class="stxrow"><span class="stxq">' + esc(shortName(P[q].n)) + ' <span class="muted">' + P[q].t + " · " + ((m.get(q) || []).length) + ' tix</span></span>' + mates.map(j => '<button class="stchip' + (cur.has(P[j].n) ? " on" : "") + (isOut(P[j]) && !(S.knobs.tix[P[j].n] > 0) ? " out" : "") + '" data-stq="' + esc(P[q].n) + '" data-stp="' + esc(P[j].n) + '" title="' + esc(P[j].n) + " " + (P[j].dr || P[j].p) + " $" + P[j].s + " · boom " + (P[j].w * 100).toFixed(1) + '%">' + esc(shortName(P[j].n)) + ' <span class="muted">' + (P[j].dr || P[j].p) + " " + (P[j].w * 100).toFixed(0) + "%</span></button>").join("")
+        return '<div class="stxrow"><span class="stxq">' + esc(shortName(P[q].n)) + ' <span class="muted">' + P[q].t + " · " + ((m.get(q) || []).length) + ' tix</span></span>' + mates.map(j => '<button class="stchip' + (cur.has(P[j].n) ? " on" : "") + (cur.has(P[j].n) && P[j].stk !== 1 && S.knobs.rules.stxonly ? " add" : "") + (poolOut(P[j]) ? " out" : "") + '" data-stq="' + esc(P[q].n) + '" data-stp="' + esc(P[j].n) + '" title="' + esc(P[j].n) + " " + (P[j].dr || P[j].p) + " $" + P[j].s + " · boom " + (P[j].w * 100).toFixed(1) + '%">' + esc(shortName(P[j].n)) + ' <span class="muted">' + (P[j].dr || P[j].p) + " " + (P[j].w * 100).toFixed(0) + "%</span></button>").join("")
           + (S.knobs.stx[P[q].n] ? ' <button class="btn small" data-streset="' + esc(P[q].n) + '">reset</button>' : "") + "</div>"; }).join("") + "</div>";
     body.innerHTML = editor + '<div class="tablewrap"><table><thead><tr><th>QB</th><th class="num">Tix</th><th>Stacked with</th><th>Bring-backs</th></tr></thead><tbody>' + qbs.map(q => {
       const p = P[q], st = new Map(), bb = new Map();
@@ -1130,7 +1136,7 @@ function renderKnobs() {
 }
 let rebuildTimer = null;
 function scheduleRebuild() { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => { try { localStorage.setItem("comboLabKnobs", JSON.stringify(S.knobs)); } catch (e) {} stopPlay(); if (S.book !== "mine" && S.book !== "grid" && S.book !== "combo") setBook("mine"); S.shown = 150; renderAll(); }, 140); }
-function setBook(b) { S.book = b; for (const x of $("books").children) x.setAttribute("aria-pressed", String(x.dataset.b === b)); }
+function setBook(b) { S.book = b; for (const x of $("books").children) x.setAttribute("aria-pressed", String(x.dataset.b === b)); try { localStorage.setItem("comboLabBook", b); } catch (e) {} }
 function setTab(t) { S.tab = t; for (const x of $("tabs").children) x.setAttribute("aria-selected", String(x.dataset.t === t)); }
 function setView(v) { S.view = v; for (const x of $("views").children) x.setAttribute("aria-selected", String(x.dataset.v === v)); }
 $("weeks").innerHTML = LAB.weeks.map((w, k) => '<button data-w="' + k + '" aria-pressed="' + (k === S.week) + '"' + (w.post ? "" : ' title="Not played yet - no truth layer"') + ">Week " + w.week + (w.post ? "" : " · live") + "</button>").join("");
@@ -1203,8 +1209,9 @@ $("play").addEventListener("click", () => {
 $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = S.knobs.banQ, keepNp = S.knobs.npOff, keepF = S.knobs.filters, keepK = S.knobs.keep, keepT = S.knobs.tix, keepS = S.knobs.stx; S.knobs = defaultKnobs(); S.knobs.bans = keep; S.knobs.banQ = keepQ; S.knobs.npOff = keepNp; S.knobs.filters = keepF; S.knobs.keep = keepK; S.knobs.tix = keepT; S.knobs.stx = keepS; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
+try { const b0 = localStorage.getItem("comboLabBook"); if (b0 && [...$("books").children].some(x => x.dataset.b === b0)) setBook(b0); } catch (e) {}   // the book he was on
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261018111359";
+const BUILD = "20261018112830";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
