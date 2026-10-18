@@ -78,6 +78,8 @@ a.btn{text-decoration:none;display:inline-block}
 .chip.sel{outline:2px solid var(--ink);outline-offset:1px}
 .chip.banned{text-decoration:line-through;opacity:.55}
 .banbox{width:16px;height:16px;accent-color:var(--bad);cursor:pointer}
+.tixbox{width:44px;margin-left:4px;padding:1px 3px;font:inherit;font-size:11px;background:transparent;color:inherit;border:1px solid var(--line, #8884);border-radius:3px}
+.tixbox.set{border-color:var(--accent, #2b7);font-weight:700}
 .banlist{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .banlist button{border:1px solid var(--line);background:var(--chip);color:var(--ink);border-radius:4px;padding:1px 6px;font:12px var(--body);cursor:pointer}
 tr.isbanned td{opacity:.55}
@@ -127,7 +129,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 10:33 PM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 8:18 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="combo">Combination grid</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -309,14 +311,15 @@ function buildBook(W, K) {
   const SAL_LO = K.salLo > 0 ? K.salLo : SAL_FLOOR;   // a per-build salary floor (switch; off = the lab's $49,500)
   const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
   const ctx = makeCtx(W), {P, n, one, stackOf} = ctx, R = Object.assign({}, DEFAULT_RULES, K.rules || {});
-  const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0;   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
+  const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0, keepSet = new Set(K.keep || []);   // keep: plays despite a filter / the floor (Larry 10-18)
+  const TIX = {}; for (const nm in (K.tix || {})) { const v = Math.round(+K.tix[nm]); if (v > 0) TIX[nm] = Math.min(150, v); }   // the ticket overrides (Larry 10-18)   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
   const FL = Object.assign({}, DEFAULT_FILTERS, K.filters || {});
   const spotOf = p => parseInt(String(p.dr || "").replace(/\D/g, ""), 10) || 0;
   P.forEach((p, i) => {
     const underFloor = floor > 0 && SKILL[p.p] && p.w < floor && !(K.floorTE1 && p.dr === "TE1");   // the review's fix 2: a TE1 is never cut by the floor
     const cheapDeep = K.cheapDepth && SKILL[p.p] && p.s < 4500 && ((p.p === "WR" && spotOf(p) >= 3) || (p.p === "RB" && spotOf(p) >= 2));   // fix 1
     if (K.cheapBust && cheapProfile(p) === "bust" && (K.cheapBust !== "spots" || (p.p !== "WR" && spotOf(p) >= 2))) { banned[i] = 1; return; }   // the cheap-player profile: the bust profile never plays ("spots" = only the cheap RB2 / TE2-or-deeper)
-    if (banSet.has(p.n) || (K.banQ && p.st) || underFloor || cheapDeep || filteredOut(p, FL)) banned[i] = 1; });
+    if (banSet.has(p.n) || (K.banQ && p.st) || ((underFloor || cheapDeep || filteredOut(p, FL)) && !keepSet.has(p.n) && !(TIX[p.n] > 0))) banned[i] = 1; });
   for (const q in stackOf) stackOf[q] = stackOf[q].filter(j => !banned[j]);
   const sk = P.filter(p => p.p !== "DST").map(p => p.own);
   const om = sk.reduce((a, b) => a + b, 0) / sk.length, osd = Math.sqrt(sk.reduce((a, b) => a + (b - om) ** 2, 0) / sk.length) || 1;
@@ -335,7 +338,7 @@ function buildBook(W, K) {
   P.forEach((p, i) => { if (p.p === "QB" && p.q > 0 && stackOf[i].length && !banned[i]) { rem[i] = p.q; for (const j of stackOf[i]) (recvOf[j] = recvOf[j] || []).push(i); } });
   const nDST = P.filter(p => p.p === "DST").length, nTix = P.reduce((a, p) => a + (p.p === "QB" && p.q > 0 && stackOf[P.indexOf(p)].length ? p.q : 0), 0);
   const posCap = j => K["cap" + P[j].p] > 0 ? K["cap" + P[j].p] : K.cap;   // Larry 10-17: a cap PER POSITION (K.capRB / capWR / capTE; unset = the one cap)
-  const capOf = j => P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : (K.cheapCap > 0 && SKILL[P[j].p] && P[j].s < 4000 ? Math.min(posCap(j), K.cheapCap) : posCap(j));   // fix 3: the cheap-player cap
+  const capOf = j => TIX[P[j].n] > 0 ? TIX[P[j].n] : P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : (K.cheapCap > 0 && SKILL[P[j].p] && P[j].s < 4000 ? Math.min(posCap(j), K.cheapCap) : posCap(j));   // fix 3: the cheap-player cap
   const capOK = (j, qi) => {   // not banned, and under the cap after holding room for the QBs he stacks with (other than this ticket's QB)
     if (banned[j]) return false;
     let hold = 0; for (const q of recvOf[j] || []) if (q !== qi) hold += Math.min(rem[q], Math.ceil(rem[q] * (1 + K.two) / stackOf[q].length));
@@ -635,7 +638,7 @@ function buildBook(W, K) {
   const gameKey = P.map(p => [p.t, p.o].sort().join("@"));
   if (CG) {   // the ticket budgets: each pool player's share of the seats follows his knob score (water-filled under the cap)
     const lean = K.lean ?? 1;
-    const waterFill = (ids, seats) => { const fixed = new Set();
+    const waterFill = (ids, seats) => { const fixed = new Set(ids.filter(i => TIX[P[i].n] > 0)); for (const i of fixed) tgt[i] = TIX[P[i].n];   // an override is his budget
       for (let it = 0; it < 10; it++) {
         const free = ids.filter(i => !fixed.has(i)); let left = seats; for (const i of fixed) left -= tgt[i];
         const w = free.map(i => Math.pow(Math.max(0, K.cgBoom ? P[i].w : base[i]), lean)), sw = w.reduce((a, b) => a + b, 0);
@@ -663,6 +666,7 @@ function buildBook(W, K) {
   for (const {qi, k} of seq) {
     const Q = P[qi];
     for (let j = 0; j < n; j++) bf[j] = base[j] * (P[j].p === "QB" ? 1 : Math.max(0.05, 1 - K.spread * use[j] / capOf(j)));
+    for (let j = 0; j < n; j++) if (TIX[P[j].n] > 0 && !banned[j] && use[j] < TIX[P[j].n] * (book.length + 1) / Math.max(1, nTix)) bf[j] += 1;   // an override behind pace gets the seat
     const unit = GRID ? (unitSeq[qi] || [])[k - 1] : null;
     let nStack = unit ? unit.rs.length : (k <= Math.round(quota[qi] * K.two) && stackOf[qi].length >= 2) ? 2 : 1;
     if (K.te1stack && nStack === 2) for (const j of stackOf[qi]) if (P[j].p === "TE" && P[j].dr === "TE1") bf[j] += K.te1stack;   // fix 4: a double stack leans to the QB's TE1
@@ -760,7 +764,7 @@ const RULES = [
 const LAB = window.LAB;
 const S = {week: LAB.weeks.length - 1, book: "mine", truth: false, color: "pos", tab: "results", view: "tickets", shown: 150, sel: null, filter: null, game: null, sort: null,
   knobs: defaultKnobs()};
-function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; k.polish = false; k.npOff = []; k.filters = Object.assign({}, DEFAULT_FILTERS); return k; }
+function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; k.polish = false; k.npOff = []; k.keep = []; k.tix = {}; k.filters = Object.assign({}, DEFAULT_FILTERS); return k; }
 try { const saved = JSON.parse(localStorage.getItem("comboLabKnobs") || "null");
   if (saved) { for (const k of KNOBS) if (typeof saved[k.k] === "number") S.knobs[k.k] = saved[k.k];
     if (saved.rules) for (const r of RULES) if (typeof saved.rules[r.k] === "boolean") S.knobs.rules[r.k] = saved.rules[r.k];
@@ -768,15 +772,20 @@ try { const saved = JSON.parse(localStorage.getItem("comboLabKnobs") || "null");
     if (typeof saved.banQ === "boolean") S.knobs.banQ = saved.banQ;
     if (typeof saved.polish === "boolean") S.knobs.polish = saved.polish;
     if (Array.isArray(saved.npOff)) S.knobs.npOff = saved.npOff.filter(x => typeof x === "string");
+    if (Array.isArray(saved.keep)) S.knobs.keep = saved.keep.filter(x => typeof x === "string");
+    if (saved.tix && typeof saved.tix === "object") for (const nm in saved.tix) { const v = Math.round(+saved.tix[nm]); if (v > 0) S.knobs.tix[nm] = Math.min(150, v); }
     if (saved.filters) for (const f in DEFAULT_FILTERS) if (typeof saved.filters[f] === "boolean") S.knobs.filters[f] = saved.filters[f]; } } catch (e) {}
 const NEVER = (window.LAB.neverPlay || []).slice();   // the standing never-play list
 const npOn = n => NEVER.includes(n) && !S.knobs.npOff.includes(n);
 const isBanned = n => S.knobs.bans.includes(n) || npOn(n);
 const effBans = () => [...new Set(S.knobs.bans.concat(NEVER.filter(n => !S.knobs.npOff.includes(n))))];
-const isOut = p => isBanned(p.n) || (S.knobs.banQ && !!p.st) || !!filteredOut(p, S.knobs.filters);   // off every ticket: a name ban, or a Q tag while "ban everyone tagged Q" is on
+const isOut = p => isBanned(p.n) || (S.knobs.banQ && !!p.st) || (!!filteredOut(p, S.knobs.filters) && !S.knobs.keep.includes(p.n) && !(S.knobs.tix[p.n] > 0));   // off every ticket: a name ban, or a Q tag while "ban everyone tagged Q" is on
 function toggleBan(name) {
+  const pl = wk().pre.players.find(x => x.n === name), filt = !!(pl && filteredOut(pl, S.knobs.filters));
   if (NEVER.includes(name)) S.knobs.npOff = npOn(name) ? S.knobs.npOff.concat(name) : S.knobs.npOff.filter(x => x !== name);   // a never-play name toggles its own switch
-  else S.knobs.bans = S.knobs.bans.includes(name) ? S.knobs.bans.filter(x => x !== name) : S.knobs.bans.concat(name).sort();
+  else if (S.knobs.bans.includes(name)) S.knobs.bans = S.knobs.bans.filter(x => x !== name);
+  else if (filt || S.knobs.keep.includes(name)) S.knobs.keep = S.knobs.keep.includes(name) ? S.knobs.keep.filter(x => x !== name) : S.knobs.keep.concat(name).sort();   // held out by a filter: the box lets him play (or puts him back under it)
+  else S.knobs.bans = S.knobs.bans.concat(name).sort();
   renderBans(); scheduleRebuild(); }
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
@@ -939,8 +948,8 @@ function renderPlayersTable() {   // the Players tab's table, filtered by the se
   const rows = P.map((p, i) => ({i, p, c: C.get(i) || 0})).filter(r => (!S.ppos || S.ppos === "ALL" || r.p.p === S.ppos) && (!q || fold(r.p.n + " " + r.p.t + " " + r.p.p).includes(q)));
   rows.sort((a, b) => key === "pos" ? (POS_ORDER[a.p.p] - POS_ORDER[b.p.p] || spotN(a.p) - spotN(b.p) || (a.p.rr || 99) - (b.p.rr || 99) || b.c - a.c) : key === "name" ? a.p.n.localeCompare(b.p.n) : key === "pts" && S.truth ? W.post.pts[b.i] - W.post.pts[a.i] : key === "own" ? b.p.own - a.p.own : key === "boom" ? b.p.w - a.p.w : key === "sal" ? b.p.s - a.p.s : b.c - a.c || b.p.w - a.p.w);
   $("pcount").textContent = rows.length + (rows.length === 1 ? " player" : " players");
-  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick Ban to keep him off every ticket. <b class="tag t-fit">fit</b> / <b class="tag t-bust">bust</b> = the cheap-player profile (under $4,500): fit = a cheap TE1, the profile that hits most; bust = a cheap RB2 / TE2 or under 2.5% boom, the profile that hits least.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th data-s="pos">Pos</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
-      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (bn ? " checked" : "") + ' aria-label="Ban ' + esc(r.p.n) + '"></td><td>' + chip(r.i, W, true, true) + '</td><td title="His spot on his team (the RB1 / WR1 / TE1 your rules use) and his rank among the slate\'s same-role players">' + posCell(r.p) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + '</td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
+  box.innerHTML = '<p class="note">Click a column to sort. Click a player to see his partners. Tick the box to keep him off every ticket; untick a player your filters hold out to let him play. Type a number in his Tickets box to set how many tickets he gets (clear it to go back to automatic). <b class="tag t-fit">fit</b> / <b class="tag t-bust">bust</b> = the cheap-player profile (under $4,500): fit = a cheap TE1, the profile that hits most; bust = a cheap RB2 / TE2 or under 2.5% boom, the profile that hits least.</p><div class="tablewrap"><table><thead><tr><th title="Ban">Ban</th><th data-s="name">Player</th><th data-s="pos">Pos</th><th class="num" data-s="sal">Sal</th><th class="num" data-s="n">Tix</th><th></th><th class="num" data-s="own">Own%</th><th class="num" data-s="boom">Boom</th>' + (S.truth ? '<th class="num" data-s="pts">Pts</th>' : "") + "</tr></thead><tbody>"
+      + rows.map(r => { const flag = S.truth && hot.has(r.i) && r.c <= 3, bn = isBanned(r.p.n), out_ = isOut(r.p); return '<tr' + (out_ ? ' class="isbanned"' : "") + '><td><input type="checkbox" class="banbox" data-name="' + esc(r.p.n) + '"' + (out_ ? " checked" : "") + ' aria-label="' + (out_ ? "Let " + esc(r.p.n) + " play" : "Ban " + esc(r.p.n)) + '"></td><td>' + chip(r.i, W, true, true) + '</td><td title="His spot on his team (the RB1 / WR1 / TE1 your rules use) and his rank among the slate\'s same-role players">' + posCell(r.p) + '</td><td class="num">' + (r.p.s / 1000).toFixed(1) + '</td><td class="num">' + r.c + ' <input type="number" min="1" max="150" class="tixbox' + (S.knobs.tix[r.p.n] ? " set" : "") + '" data-name="' + esc(r.p.n) + '" value="' + (S.knobs.tix[r.p.n] || "") + '" placeholder="set" title="Set ' + esc(r.p.n) + "'s tickets (clear it to go back to automatic)" + '" aria-label="Tickets for ' + esc(r.p.n) + '"></td><td style="width:54px"><div class="bar" style="width:' + Math.min(100, r.c / 0.4) + '%"></div></td><td class="num">' + r.p.own.toFixed(1) + '</td><td class="num">' + (r.p.w * 100).toFixed(1) + "%</td>" + (S.truth ? '<td class="num' + (flag ? " flag" : "") + '">' + W.post.pts[r.i].toFixed(1) + (flag ? " !" : "") + "</td>" : "") + "</tr>"; }).join("") + "</tbody></table></div>"
       + (S.truth ? '<p class="note"><span class="flag">!</span> = one of the week\'s real boomers on 3 tickets or fewer.</p>' : "");
 }
 function renderTab() {
@@ -1077,7 +1086,9 @@ function renderBans() {
   if ($("neverlist")) $("neverlist").innerHTML = NEVER.length ? NEVER.map(n => '<label class="rule' + (npOn(n) ? "" : " off") + '"><input type="checkbox" class="npbox" data-name="' + esc(n) + '"' + (npOn(n) ? " checked" : "") + "><span>" + esc(n) + "</span></label>").join("") : '<p class="note">Empty.</p>';
   if ($("polishbox")) $("polishbox").checked = !!S.knobs.polish;
   const el = $("banlist"); if (!el) return;
-  el.innerHTML = S.knobs.bans.length ? '<button class="btn small" id="clearbans">Unban all (' + S.knobs.bans.length + ')</button><div class="banlist">' + S.knobs.bans.map(n => '<button data-unban="' + esc(n) + '" title="Unban ' + esc(n) + '">' + esc(n) + " ✕</button>").join("") + "</div>" : '<p class="note">None.</p>';
+  el.innerHTML = (S.knobs.bans.length ? '<button class="btn small" id="clearbans">Unban all (' + S.knobs.bans.length + ')</button><div class="banlist">' + S.knobs.bans.map(n => '<button data-unban="' + esc(n) + '" title="Unban ' + esc(n) + '">' + esc(n) + " ✕</button>").join("") + "</div>" : '<p class="note">None.</p>')
+    + (S.knobs.keep.length ? '<p class="note">Playing despite a filter:</p><div class="banlist">' + S.knobs.keep.map(n => '<button data-unban="' + esc(n) + '" title="Put ' + esc(n) + ' back under his filter">' + esc(n) + " ✕</button>").join("") + "</div>" : "")
+    + (Object.keys(S.knobs.tix).length ? '<p class="note">Ticket overrides:</p><div class="banlist">' + Object.keys(S.knobs.tix).sort().map(n => '<button data-untix="' + esc(n) + '" title="Back to automatic for ' + esc(n) + '">' + esc(n) + " " + S.knobs.tix[n] + " ✕</button>").join("") + "</div>" : "");
 }
 function renderAll(anim) { if ($("exportbox").innerHTML && !anim) $("exportbox").innerHTML = ""; renderMain(anim); renderTab(); }
 function renderKnobs() {
@@ -1109,6 +1120,8 @@ $("truth").addEventListener("change", e => { S.truth = e.target.checked; $("bsor
 $("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; setTab(b.dataset.t); renderTab(); });
 $("views").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; setView(b.dataset.v); renderMain(); });
 document.addEventListener("change", e => { if (e.target.id === "gamesel") { S.game = e.target.value; renderMain(); } });
+document.addEventListener("change", e => { if (e.target.classList && e.target.classList.contains("tixbox")) { const nm = e.target.dataset.name, v = Math.round(+e.target.value);   // the ticket override
+  if (v > 0) S.knobs.tix[nm] = Math.min(150, v); else delete S.knobs.tix[nm]; renderBans(); scheduleRebuild(); } });
 document.addEventListener("input", e => { if (e.target.id === "psearch") { S.psearch = e.target.value; renderPlayersTable(); } });
 document.addEventListener("change", e => { if (e.target.id === "bsort") { S.bsort = e.target.value; renderMain(); } });
 document.addEventListener("click", e => {
@@ -1117,6 +1130,7 @@ document.addEventListener("click", e => {
   const pb = e.target.closest("#pposseg button");
   if (pb) { S.ppos = pb.dataset.pos; for (const x of pb.parentNode.children) x.setAttribute("aria-pressed", String(x === pb)); renderPlayersTable(); return; }
   if (e.target.dataset && e.target.dataset.unban) { toggleBan(e.target.dataset.unban); return; }
+  if (e.target.dataset && e.target.dataset.untix) { delete S.knobs.tix[e.target.dataset.untix]; renderBans(); scheduleRebuild(); return; }   // a ticket override back to automatic
   if (e.target.id === "clearbans" || e.target.id === "unbanall2") { const nb = S.knobs.bans.length; if (!nb || !confirm("Unban all " + nb + " lab bans? (Your never-play list stays on.)")) return; S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
   if (e.target.id === "banq") { S.knobs.banQ = e.target.checked; scheduleRebuild(); return; }
   if (e.target.id === "polishbox") { S.knobs.polish = e.target.checked; scheduleRebuild(); return; }
@@ -1150,11 +1164,11 @@ $("play").addEventListener("click", () => {
   playing = setInterval(() => { const B = currentBook(); if (S.shown >= B.tickets.length) { stopPlay(); renderTab(); return; }
     S.shown++; renderMain(S.shown - 1); if (S.shown % 5 === 0 || S.shown === B.tickets.length) renderTab(); }, +$("speed").value);
 });
-$("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = S.knobs.banQ, keepNp = S.knobs.npOff, keepF = S.knobs.filters; S.knobs = defaultKnobs(); S.knobs.bans = keep; S.knobs.banQ = keepQ; S.knobs.npOff = keepNp; S.knobs.filters = keepF; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
+$("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = S.knobs.banQ, keepNp = S.knobs.npOff, keepF = S.knobs.filters, keepK = S.knobs.keep, keepT = S.knobs.tix; S.knobs = defaultKnobs(); S.knobs.bans = keep; S.knobs.banQ = keepQ; S.knobs.npOff = keepNp; S.knobs.filters = keepF; S.knobs.keep = keepK; S.knobs.tix = keepT; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261017223309";
+const BUILD = "20261018081857";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
