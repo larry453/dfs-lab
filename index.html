@@ -79,6 +79,12 @@ a.btn{text-decoration:none;display:inline-block}
 .chip.banned{text-decoration:line-through;opacity:.55}
 .banbox{width:16px;height:16px;accent-color:var(--bad);cursor:pointer}
 .tixbox{width:44px;margin-left:4px;padding:1px 3px;font:inherit;font-size:11px;background:transparent;color:inherit;border:1px solid var(--line, #8884);border-radius:3px}
+.stx{display:flex;flex-direction:column;gap:6px;margin:6px 0 12px}
+.stxrow{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.stxq{min-width:150px;font-weight:700}
+.stchip{font:inherit;font-size:11px;padding:2px 6px;border:1px solid var(--line, #8886);border-radius:3px;background:transparent;color:inherit;cursor:pointer}
+.stchip.on{border-color:var(--accent, #2b7);box-shadow:inset 0 0 0 1px var(--accent, #2b7);font-weight:700}
+.stchip.out{opacity:.5;text-decoration:line-through}
 .tixbox.set{border-color:var(--accent, #2b7);font-weight:700}
 .banlist{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .banlist button{border:1px solid var(--line);background:var(--chip);color:var(--ink);border-radius:4px;padding:1px 6px;font:12px var(--body);cursor:pointer}
@@ -129,7 +135,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 10:55 AM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 11:13 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="combo">Combination grid</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -311,6 +317,8 @@ function buildBook(W, K) {
   const SAL_LO = K.salLo > 0 ? K.salLo : SAL_FLOOR;   // a per-build salary floor (switch; off = the lab's $49,500)
   const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
   const ctx = makeCtx(W), {P, n, one, stackOf} = ctx, R = Object.assign({}, DEFAULT_RULES, K.rules || {});
+  if (K.stx) for (let i = 0; i < n; i++) if (P[i].p === "QB" && Array.isArray(K.stx[P[i].n])) {   // Larry 10-18: his own stack partners for this QB (the QB stacks tab)
+    const want = new Set(K.stx[P[i].n]); stackOf[i] = P.map((x, j) => j).filter(j => P[j].t === P[i].t && (P[j].p === "WR" || P[j].p === "TE") && want.has(P[j].n)); }
   const banned = new Uint8Array(n), banSet = new Set(K.bans || []), floor = K.minBoom || 0, keepSet = new Set(K.keep || []);   // keep: plays despite a filter / the floor (Larry 10-18)
   const TIX = {}; for (const nm in (K.tix || {})) { const v = Math.round(+K.tix[nm]); if (v > 0) TIX[nm] = Math.min(150, v); }   // the ticket overrides (Larry 10-18)   // Larry's bans (by name, every week) + the boom floor (RB / WR / TE only)
   const FL = Object.assign({}, DEFAULT_FILTERS, K.filters || {});
@@ -778,7 +786,7 @@ const RULES = [
 const LAB = window.LAB;
 const S = {week: LAB.weeks.length - 1, book: "mine", truth: false, color: "pos", tab: "results", view: "tickets", shown: 150, sel: null, filter: null, game: null, sort: null,
   knobs: defaultKnobs()};
-function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; k.polish = false; k.npOff = []; k.keep = []; k.tix = {}; k.filters = Object.assign({}, DEFAULT_FILTERS); return k; }
+function defaultKnobs() { const k = Object.fromEntries(KNOBS.map(x => [x.k, x.def])); k.rules = Object.assign({}, DEFAULT_RULES); k.bans = []; k.banQ = false; k.polish = false; k.npOff = []; k.keep = []; k.tix = {}; k.stx = {}; k.filters = Object.assign({}, DEFAULT_FILTERS); return k; }
 try { const saved = JSON.parse(localStorage.getItem("comboLabKnobs") || "null");
   if (saved) { for (const k of KNOBS) if (typeof saved[k.k] === "number") S.knobs[k.k] = saved[k.k];
     if (saved.rules) for (const r of RULES) if (typeof saved.rules[r.k] === "boolean") S.knobs.rules[r.k] = saved.rules[r.k];
@@ -787,6 +795,7 @@ try { const saved = JSON.parse(localStorage.getItem("comboLabKnobs") || "null");
     if (typeof saved.polish === "boolean") S.knobs.polish = saved.polish;
     if (Array.isArray(saved.npOff)) S.knobs.npOff = saved.npOff.filter(x => typeof x === "string");
     if (Array.isArray(saved.keep)) S.knobs.keep = saved.keep.filter(x => typeof x === "string");
+    if (saved.stx && typeof saved.stx === "object") for (const q in saved.stx) if (Array.isArray(saved.stx[q])) S.knobs.stx[q] = saved.stx[q].filter(x => typeof x === "string");
     if (saved.tix && typeof saved.tix === "object") for (const nm in saved.tix) { const v = Math.round(+saved.tix[nm]); if (v > 0) S.knobs.tix[nm] = Math.min(150, v); }
     if (saved.filters) for (const f in DEFAULT_FILTERS) if (typeof saved.filters[f] === "boolean") S.knobs.filters[f] = saved.filters[f]; } } catch (e) {}
 const NEVER = (window.LAB.neverPlay || []).slice();   // the standing never-play list
@@ -994,7 +1003,13 @@ function renderTab() {
   }
   if (S.tab === "stacks") {
     const m = byQB(B, n, P), qbs = [...m.keys()].sort((a, b) => m.get(b).length - m.get(a).length);
-    body.innerHTML = '<div class="tablewrap"><table><thead><tr><th>QB</th><th class="num">Tix</th><th>Stacked with</th><th>Bring-backs</th></tr></thead><tbody>' + qbs.map(q => {
+    const defOf = q => P.filter(x => x.t === P[q].t && (x.p === "WR" || x.p === "TE") && x.stk === 1).map(x => x.n);
+    const qAll = P.map((x, i) => i).filter(i => P[i].p === "QB" && P[i].q > 0 && !isBanned(P[i].n)).sort((a, b) => (m.get(b) || []).length - (m.get(a) || []).length || P[a].n.localeCompare(P[b].n));
+    const editor = '<p class="note"><b>Stack partners.</b> Click a receiver to add or remove him as this QB\'s stack partner (highlighted = partner). Only a partner can share a ticket with his QB. Struck-through = out of the pool (a ban, a filter or under the boom floor; a ticket count in the Players tab lets him play).</p><div class="stx">'
+      + qAll.map(q => { const cur = new Set(S.knobs.stx[P[q].n] || defOf(q)), mates = P.map((x, j) => j).filter(j => P[j].t === P[q].t && (P[j].p === "WR" || P[j].p === "TE")).sort((a, b) => (P[a].p === P[b].p ? 0 : P[a].p === "WR" ? -1 : 1) || spotN(P[a]) - spotN(P[b]));
+        return '<div class="stxrow"><span class="stxq">' + esc(shortName(P[q].n)) + ' <span class="muted">' + P[q].t + " · " + ((m.get(q) || []).length) + ' tix</span></span>' + mates.map(j => '<button class="stchip' + (cur.has(P[j].n) ? " on" : "") + (isOut(P[j]) && !(S.knobs.tix[P[j].n] > 0) ? " out" : "") + '" data-stq="' + esc(P[q].n) + '" data-stp="' + esc(P[j].n) + '" title="' + esc(P[j].n) + " " + (P[j].dr || P[j].p) + " $" + P[j].s + " · boom " + (P[j].w * 100).toFixed(1) + '%">' + esc(shortName(P[j].n)) + ' <span class="muted">' + (P[j].dr || P[j].p) + " " + (P[j].w * 100).toFixed(0) + "%</span></button>").join("")
+          + (S.knobs.stx[P[q].n] ? ' <button class="btn small" data-streset="' + esc(P[q].n) + '">reset</button>' : "") + "</div>"; }).join("") + "</div>";
+    body.innerHTML = editor + '<div class="tablewrap"><table><thead><tr><th>QB</th><th class="num">Tix</th><th>Stacked with</th><th>Bring-backs</th></tr></thead><tbody>' + qbs.map(q => {
       const p = P[q], st = new Map(), bb = new Map();
       for (const k of m.get(q)) for (const j of B.tickets[k]) { if (j === q) continue; if (P[j].t === p.t && P[j].p !== "DST") st.set(j, (st.get(j) || 0) + 1); if (P[j].t === p.o && SKILL[P[j].p]) bb.set(j, (bb.get(j) || 0) + 1); }
       const list = mm => [...mm].sort((x, y) => y[1] - x[1]).map(([j, c]) => esc(shortName(P[j].n)) + " " + c + (S.truth ? ' <span class="muted">(' + W.post.pts[j].toFixed(0) + ")</span>" : "")).join(", ") || "-";
@@ -1144,6 +1159,13 @@ document.addEventListener("click", e => {
   const pb = e.target.closest("#pposseg button");
   if (pb) { S.ppos = pb.dataset.pos; for (const x of pb.parentNode.children) x.setAttribute("aria-pressed", String(x === pb)); renderPlayersTable(); return; }
   if (e.target.dataset && e.target.dataset.unban) { toggleBan(e.target.dataset.unban); return; }
+  const stb = e.target.closest && e.target.closest("[data-stq]");
+  if (stb) { const q = stb.dataset.stq, pl = stb.dataset.stp, P_ = wk().pre.players, Q_ = P_.find(x => x.n === q);   // a stack partner on / off for this QB
+    const def = P_.filter(x => x.t === Q_.t && (x.p === "WR" || x.p === "TE") && x.stk === 1).map(x => x.n), cur = new Set(S.knobs.stx[q] || def);
+    if (cur.has(pl)) cur.delete(pl); else cur.add(pl);
+    const list = [...cur].sort(), same = list.length === def.length && def.every(x => cur.has(x));
+    if (same) delete S.knobs.stx[q]; else S.knobs.stx[q] = list; scheduleRebuild(); return; }
+  if (e.target.dataset && e.target.dataset.streset) { delete S.knobs.stx[e.target.dataset.streset]; scheduleRebuild(); return; }
   if (e.target.dataset && e.target.dataset.untix) { delete S.knobs.tix[e.target.dataset.untix]; renderBans(); scheduleRebuild(); return; }   // a ticket override back to automatic
   if (e.target.id === "clearbans" || e.target.id === "unbanall2") { const nb = S.knobs.bans.length; if (!nb || !confirm("Unban all " + nb + " lab bans? (Your never-play list stays on.)")) return; S.knobs.bans = []; renderBans(); scheduleRebuild(); return; }
   if (e.target.id === "banq") { S.knobs.banQ = e.target.checked; scheduleRebuild(); return; }
@@ -1178,11 +1200,11 @@ $("play").addEventListener("click", () => {
   playing = setInterval(() => { const B = currentBook(); if (S.shown >= B.tickets.length) { stopPlay(); renderTab(); return; }
     S.shown++; renderMain(S.shown - 1); if (S.shown % 5 === 0 || S.shown === B.tickets.length) renderTab(); }, +$("speed").value);
 });
-$("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = S.knobs.banQ, keepNp = S.knobs.npOff, keepF = S.knobs.filters, keepK = S.knobs.keep, keepT = S.knobs.tix; S.knobs = defaultKnobs(); S.knobs.bans = keep; S.knobs.banQ = keepQ; S.knobs.npOff = keepNp; S.knobs.filters = keepF; S.knobs.keep = keepK; S.knobs.tix = keepT; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
+$("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = S.knobs.banQ, keepNp = S.knobs.npOff, keepF = S.knobs.filters, keepK = S.knobs.keep, keepT = S.knobs.tix, keepS = S.knobs.stx; S.knobs = defaultKnobs(); S.knobs.bans = keep; S.knobs.banQ = keepQ; S.knobs.npOff = keepNp; S.knobs.filters = keepF; S.knobs.keep = keepK; S.knobs.tix = keepT; S.knobs.stx = keepS; renderKnobs(); scheduleRebuild(); });   // bans are permanent: only "Clear all bans" drops them
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261018105519";
+const BUILD = "20261018111359";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
