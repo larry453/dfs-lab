@@ -127,10 +127,10 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 5:51 PM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sat 10-17 8:04 PM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
-    <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
+    <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="combo">Combination grid</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
   </div>
   <label class="truth"><input type="checkbox" id="truth"> Truth layer (after the games)</label>
   <div class="seg" id="color" role="group" aria-label="Colour the chips by">
@@ -217,6 +217,36 @@ function cheapProfile(p) {
   if ((p.p === "RB" && spot >= 2) || (p.p === "TE" && spot >= 2) || p.w < 0.025) return "bust";
   return "";
 }
+function profileScore(p) {   // plan item 186: + / - points from the position's profile (pregame facts only)
+  const fd = p.fd, ws = p.ws, w = p.w, s = p.s, spot = parseInt(String(p.dr || "").replace(/\D/g, ""), 10) || 0; let v = 0;
+  if (p.p === "QB") {
+    if ((fd === 0 && ws === 2) || (fd === 2 && ws === 0)) v += 1;   // underdog + soft (38% / 29%), favourite + tough (33% / 38%)
+    if (fd === 1) v -= 1; if (ws === 1) v -= 1;                     // close games, middle matchups
+    if (s >= 5500 && s < 7000) v += 0.5; else if (s < 5500) v -= 0.5;
+    if (w >= 0.15 && w < 0.30) v += 0.5; else if (w >= 0.05 && w < 0.15) v -= 0.5;
+  } else if (p.p === "RB") {
+    v += spot === 1 ? 1 : -1;                                        // RB1 17% / 26% vs RB2 3% / 8%
+    if (s >= 7000) v += 1; else if (s < 5000) v -= 1;
+    if (w >= 0.30) v += 1; else if (w >= 0.15) v += 0.5; else if (w < 0.05) v -= 1; else v -= 0.5;
+    if (p.val) v -= 1; if (fd === 1) v -= 0.5; if (ws === 2) v += 0.5;
+  } else if (p.p === "WR") {
+    v += spot === 1 ? 1 : -1;                                        // WR1 26% / 26%; WR2 / WR3 below
+    if (s >= 7000) v += 1; else if (s >= 5000) v += 0.5; else v -= 1;
+    if (w >= 0.30) v += 1; else if (w >= 0.15) v += 0.5; else if (w < 0.05) v -= 1; else v -= 0.5;
+    if (fd === 0 && (ws === 2 || ws === 1)) v += 1;                  // underdog + soft / middle
+    if (ws === 0) v -= 0.5; if (fd === 1) v -= 0.5; if (p.val) v -= 1;
+  } else if (p.p === "TE") {
+    v += spot === 1 ? 1 : -1;
+    if (ws === 2) v += 1; else if (ws === 1) v -= 1;                 // soft 23% / 18%; middle below
+    if (fd === 0) v += 0.5; else v -= 0.5;                           // underdog above; favourite / close below
+    if (p.val) v += 0.5;                                             // the value tag HELPS a TE (25% / 17%)
+    if (s >= 4000 && s < 6000) v += 0.5; else if (s < 4000) v -= 0.5;
+    if (w >= 0.15) v += 1; else if (w >= 0.05) v += 0.5; else v -= 1;
+  } else if (p.p === "DST") {
+    v += s >= 3000 ? 1 : -1; if (fd === 2) v -= 1;                   // $3,000+ above; favourite DSTs below in both sets
+  }
+  return v;
+}
 const cheapFitScore = p => cheapProfile(p) !== "fit" ? 0 : 1 + (p.ws === 2 ? 0.5 : 0) + (p.w >= 0.05 ? 0.5 : 0);
 function filteredOut(p, F) {   // LARRY'S BAN FILTERS (Sat 10-17) -> the reason a player is filtered out, or ""
   F = F || DEFAULT_FILTERS;
@@ -288,7 +318,7 @@ function buildBook(W, K) {
   for (const q in stackOf) stackOf[q] = stackOf[q].filter(j => !banned[j]);
   const sk = P.filter(p => p.p !== "DST").map(p => p.own);
   const om = sk.reduce((a, b) => a + b, 0) / sk.length, osd = Math.sqrt(sk.reduce((a, b) => a + (b - om) ** 2, 0) / sk.length) || 1;
-  const base = P.map(p => baseScore(p, K, om, osd) + (K.cheapFit ? K.cheapFit * cheapFitScore(p) : 0)), pair = new Float64Array(n * n);   // the fit profile's pull
+  const base = P.map(p => baseScore(p, K, om, osd) + (K.cheapFit ? K.cheapFit * cheapFitScore(p) : 0) + (K.profile ? K.profile * profileScore(p) : 0)), pair = new Float64Array(n * n);   // the fit profile's pull; the position profiles' pull
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const v = pairScore(P[i], P[j], K); pair[i * n + j] = v; pair[j * n + i] = v; }
   const minSal = {RB: 1e9, WR: 1e9, TE: 1e9, DST: 1e9};
   for (const p of P) if (minSal[p.p] !== undefined) minSal[p.p] = Math.min(minSal[p.p], p.s);
@@ -297,11 +327,13 @@ function buildBook(W, K) {
   for (const p of P) if (maxSal[p.p] !== undefined) maxSal[p.p] = Math.max(maxSal[p.p], p.s);
   maxSal.FLEX = Math.max(maxSal.RB, maxSal.WR, maxSal.TE);   // a second TE is rule-bound (two-TE), so the flex is budgeted as the cheapest RB / WR
   const use = new Int32Array(n), bf = new Float64Array(n), book = [], sets = [], why = [], fails = [];
+  let rs0 = (K.rand >>> 0) || 1; const rnd = () => { rs0 = (rs0 + 0x6D2B79F5) >>> 0; let x = rs0; x = Math.imul(x ^ (x >>> 15), x | 1); x ^= x + Math.imul(x ^ (x >>> 7), x | 61); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };   // test only
   const cnt = (t, pos) => { let c = 0; for (const j of t) if (P[j].p === pos) c++; return c; };
   const rem = {}, recvOf = {};
   P.forEach((p, i) => { if (p.p === "QB" && p.q > 0 && stackOf[i].length && !banned[i]) { rem[i] = p.q; for (const j of stackOf[i]) (recvOf[j] = recvOf[j] || []).push(i); } });
   const nDST = P.filter(p => p.p === "DST").length, nTix = P.reduce((a, p) => a + (p.p === "QB" && p.q > 0 && stackOf[P.indexOf(p)].length ? p.q : 0), 0);
-  const capOf = j => P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : (K.cheapCap > 0 && SKILL[P[j].p] && P[j].s < 4000 ? Math.min(K.cap, K.cheapCap) : K.cap);   // fix 3: the cheap-player cap
+  const posCap = j => K["cap" + P[j].p] > 0 ? K["cap" + P[j].p] : K.cap;   // Larry 10-17: a cap PER POSITION (K.capRB / capWR / capTE; unset = the one cap)
+  const capOf = j => P[j].p === "DST" ? Math.max(K.cap, Math.ceil(1.6 * nTix / Math.max(1, nDST))) : (K.cheapCap > 0 && SKILL[P[j].p] && P[j].s < 4000 ? Math.min(posCap(j), K.cheapCap) : posCap(j));   // fix 3: the cheap-player cap
   const capOK = (j, qi) => {   // not banned, and under the cap after holding room for the QBs he stacks with (other than this ticket's QB)
     if (banned[j]) return false;
     let hold = 0; for (const q of recvOf[j] || []) if (q !== qi) hold += Math.min(rem[q], Math.ceil(rem[q] * (1 + K.two) / stackOf[q].length));
@@ -334,15 +366,15 @@ function buildBook(W, K) {
     const br = ticketBreaks(ctx, t, R).filter(b => b !== "salary").length;
     return 5 * br + (c !== nStack ? 5 : 0) + 5 * overCut(t, cuts) + (sal < SAL_LO ? 0.5 + 2 * (SAL_LO - sal) / 1000 : 0) + (sal > SAL_HI ? 0.5 + 2 * (sal - SAL_HI) / 1000 : 0);
   }
-  function construct(qi, nStack, cuts) {
-    const Q = P[qi], ss = new Set(stackOf[qi]), t = [qi]; let sal = Q.s;
-    for (let s = 0; s < nStack; s++) {
+  function construct(qi, nStack, cuts, pre) {   // pre: seats already placed after the QB (core + coverage) - the stack pick is skipped
+    const Q = P[qi], ss = new Set(stackOf[qi]), t = [qi].concat(pre || []); let sal = t.reduce((a, j) => a + P[j].s, 0);
+    for (let s = 0; s < (pre ? 0 : nStack); s++) {
       let best = -1, bv = -Infinity;
-      for (const j of stackOf[qi]) { if (t.includes(j) || !capOK(j, qi) || !fits(t, j, Q, ss, nStack, cuts)) continue; const v = gain(t, j); if (v > bv) { bv = v; best = j; } }
+      for (const j of stackOf[qi]) { if (t.includes(j) || !capOK(j, qi) || !fits(t, j, Q, ss, nStack, cuts)) continue; const v = K.rand ? rnd() : gain(t, j); if (v > bv) { bv = v; best = j; } }
       if (best < 0) break; t.push(best); sal += P[best].s;
     }
     if (t.length < 2) return null;
-    if (R.bbforce && Q.gs === 0) {
+    if (R.bbforce && Q.gs === 0 && !pre) {
       let b = -1, bv = -Infinity;
       for (const j of one[Q.o + "|RB"] || []) { if (!capOK(j, qi) || !fits(t, j, Q, ss, nStack, null, true)) continue; const v = gain(t, j); if (v > bv) { bv = v; b = j; } }
       if (b < 0) return null; t.push(b); sal += P[b].s;
@@ -369,7 +401,7 @@ function buildBook(W, K) {
           const over = Math.max(0, sal + p.s + reserve - SAL_HI);
           if (mode < 2 && (over > 0 || sal + p.s + restMax < SAL_LO)) continue;
           if (!fits(t, j, Q, ss, nStack, mode === 0 ? cuts : null)) continue;
-          const v = gain(t, j);
+          const v = K.rand ? rnd() : CG ? cgKey(t, j, qi) : gain(t, j);
           if (mode < 2 ? v > bv : (over < bo || (over === bo && v > bv))) { bv = v; bo = over; best = j; } }
         if (best >= 0) break;
       }
@@ -378,11 +410,12 @@ function buildBook(W, K) {
     }
     return t;
   }
-  function improve(t, qi, nStack, cuts) {   // swap one seat at a time while the ticket gets better (or more legal)
+  function improve(t, qi, nStack, cuts, locked) {   // swap one seat at a time while the ticket gets better (or more legal); locked seats stay
     const ss = new Set(stackOf[qi]), cur = t.slice(); let pen = penalty(cur, ss, nStack, cuts);
     for (let pass = 0; pass < 14; pass++) {
       let bestD = 1e-9, bm = -1, bj = -1, bpen = pen;
       for (let a = 1; a < cur.length; a++) {
+        if (locked && locked.has(cur[a])) continue;
         const old = cur[a], dstSeat = P[old].p === "DST", cand = [];
         for (let j = 0; j < n; j++) { const p = P[j];
           if (p.p === "QB" || (p.p === "DST") !== dstSeat || cur.includes(j) || !capOK(j, qi)) continue;
@@ -428,9 +461,9 @@ function buildBook(W, K) {
     }
     return cur;
   }
-  function repair(cur, qi, nStack, cuts) {   // deterministic: every pair of non-stack seats, emptied and refilled under every rule
+  function repair(cur, qi, nStack, cuts, locked) {   // deterministic: every pair of non-stack seats, emptied and refilled under every rule (locked seats stay)
     const ss = new Set(stackOf[qi]), Q = P[qi], idx = [];
-    for (let a = 1; a < cur.length; a++) if (!ss.has(cur[a])) idx.push(a);
+    for (let a = 1; a < cur.length; a++) if (!ss.has(cur[a]) && !(locked && locked.has(cur[a]))) idx.push(a);
     let best = null, bestV = -Infinity;
     for (let x = 0; x < idx.length; x++) for (let y = x + 1; y < idx.length; y++) {
       const out = [cur[idx[x]], cur[idx[y]]], t = cur.filter((j, k) => k !== idx[x] && k !== idx[y]);
@@ -448,7 +481,7 @@ function buildBook(W, K) {
         if (b < 0) ok = false; else { t.push(b); sal += P[b].s; }
       }
       if (!ok) continue;
-      const r = improve(t, qi, nStack, cuts);
+      const r = improve(t, qi, nStack, cuts, locked);
       if (r.pen === 0) { let v = 0; for (let a = 0; a < 9; a++) { v += bf[r.t[a]]; for (let c = a + 1; c < 9; c++) v += pair[r.t[a] * n + r.t[c]]; } if (v > bestV) { bestV = v; best = r.t; } }
     }
     return best;
@@ -580,6 +613,49 @@ function buildBook(W, K) {
     cols.sort((a, b) => b.strength - a.strength || (a.g < b.g ? -1 : 1));
     for (const c of cols) for (const pc of c.pairs) pairList.push({...pc, g: c.g});
   }
+  const CORE = !!K.coreMode && !GRID, coreOf = {}, coreUse = new Map(); let LS = [];
+  if (CORE) {   // each QB's two best stack units (pairs first when he has two receivers) and the long-shot pool
+    for (const qi of live) {
+      const rs = stackOf[qi], Q = P[qi], ss = new Set(rs), units = [];
+      for (let a = 0; a < rs.length; a++) for (let b = a + 1; b < rs.length; b++) units.push([rs[a], rs[b]]);
+      if (!units.length) for (const r of rs) units.push([r]);
+      const sc = [];
+      for (const u of units) { const t = [qi]; let ok = true; for (const r of u) { if (!capOK(r, qi) || !fits(t, r, Q, ss, u.length, null)) { ok = false; break; } t.push(r); }
+        if (!ok) continue; let v = 0; for (const r of u) v += base[r] + pair[qi * n + r]; if (u.length === 2) v += pair[u[0] * n + u[1]];
+        sc.push({rs: u, v, id: qi + ":" + u.join("-")}); }
+      sc.sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1));
+      const q = quota[qi], nA = sc.length > 1 ? Math.max(1, Math.round(q * (K.coreShare ?? 0.7))) : q;
+      coreOf[qi] = k => sc.length ? (k <= nA ? sc[0] : sc[1]) : null;
+    }
+    LS = P.map((p, i) => i).filter(i => SKILL[P[i].p] && !banned[i] && profileScore(P[i]) <= 0 && P[i].s < 6000).sort((a, b) => base[b] - base[a] || a - b).slice(0, K.lsPool || 40);
+  }
+  const CG = K.mode === "combo" && !GRID && !CORE, tgt = new Float64Array(n), pairUse = CG ? new Int32Array(n * n) : null, unitUse = new Map(); let cgFallbacks = 0;
+  if (CG) {   // the ticket budgets: each pool player's share of the seats follows his knob score (water-filled under the cap)
+    const lean = K.lean ?? 1;
+    const waterFill = (ids, seats) => { const fixed = new Set();
+      for (let it = 0; it < 10; it++) {
+        const free = ids.filter(i => !fixed.has(i)); let left = seats; for (const i of fixed) left -= tgt[i];
+        const w = free.map(i => Math.pow(Math.max(0, base[i]), lean)), sw = w.reduce((a, b) => a + b, 0);
+        if (sw <= 0 || left <= 0) { for (const i of free) tgt[i] = 0; break; }
+        let any = false; free.forEach((i, x) => { tgt[i] = left * w[x] / sw; if (tgt[i] > capOf(i)) { tgt[i] = capOf(i); fixed.add(i); any = true; } });
+        if (!any) break; } };
+    waterFill(P.map((p, i) => i).filter(i => SKILL[P[i].p] && !banned[i]), 7 * nTix);
+    waterFill(P.map((p, i) => i).filter(i => P[i].p === "DST" && !banned[i]), nTix);
+  }
+  function cgKey(t, j, qi) {   // budget left first, then the combinations this player adds that the book does not hold yet, then the knob score
+    let nw = 0; for (const x of t) if (!pairUse[(x < j ? x : j) * n + (x < j ? j : x)]) nw += x === qi ? 2 : 1;
+    return (use[j] + 0.5 < tgt[j] ? 1000 : 0) + 10 * nw + gain(t, j);
+  }
+  function cgUnits(qi, nStack) {   // this QB's receiver units (his top 5 singles, or his top 10 pairs), the most overdue first by the rotation
+    const rs = stackOf[qi], units = [];
+    if (nStack === 2 && rs.length >= 2) { for (let a = 0; a < rs.length; a++) for (let b = a + 1; b < rs.length; b++) units.push([rs[a], rs[b]]); }
+    else for (const r of rs) units.push([r]);
+    const sc = units.map(u => ({rs: u, v: u.reduce((a, r) => a + base[r] + pair[qi * n + r], 0) + (u.length === 2 ? pair[u[0] * n + u[1]] : 0), id: qi + ":" + u.slice().sort((x, y) => x - y).join("-")}))
+      .sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1)).slice(0, nStack === 2 ? 10 : 5);
+    const f = K.focus ?? 1, w = sc.map((u, r) => Math.pow(1 / (r + 1), f)), ws = w.reduce((a, b) => a + b, 0) || 1;
+    const used = sc.map(u => unitUse.get(u.id) || 0), tot = used.reduce((a, b) => a + b, 0) + 1;
+    return sc.map((u, r) => ({...u, due: tot * w[r] / ws - used[r]})).sort((a, b) => b.due - a.due || b.v - a.v);
+  }
   for (const {qi, k} of seq) {
     const Q = P[qi];
     for (let j = 0; j < n; j++) bf[j] = base[j] * (P[j].p === "QB" ? 1 : Math.max(0.05, 1 - K.spread * use[j] / capOf(j)));
@@ -590,9 +666,36 @@ function buildBook(W, K) {
     for (let tries = 0; tries < 14 && !done; tries++) {
       let t = null, pcs = null;
       if (unit && nStack === unit.rs.length) { const g = gridTicket(qi, unit, cuts); if (g) { t = g.t; pcs = g.pcs; } }
+      if (!t && CORE) {   // core + coverage: this QB's core + the long shot this core has met least, then the usual fill around them (both locked)
+        const core = coreOf[qi] && coreOf[qi](k);
+        if (core) {
+          const ss = new Set(stackOf[qi]), order = LS.filter(j => !core.rs.includes(j) && capOK(j, qi)).sort((a, b) => (coreUse.get(core.id + "|" + a) || 0) - (coreUse.get(core.id + "|" + b) || 0) || use[a] - use[b] || base[b] - base[a]);
+          for (const ls of order.slice(tries * 3, tries * 3 + 6)) {
+            const t0 = [qi]; let ok = true; for (const j of core.rs.concat([ls])) { if (!fits(t0, j, Q, ss, core.rs.length, cuts)) { ok = false; break; } t0.push(j); }
+            if (!ok) continue;
+            const locked = new Set(core.rs.concat([ls])), c0 = construct(qi, core.rs.length, cuts, core.rs.concat([ls]));
+            if (!c0) continue;
+            const r = improve(c0, qi, core.rs.length, cuts, locked); const tt = r.pen === 0 ? r.t : repair(r.t, qi, core.rs.length, cuts, locked);
+            if (tt) { t = tt; nStack = core.rs.length; pcs = ["core:" + core.id + "|" + ls]; break; }
+          }
+        }
+      }
+      if (!t && CG) {   // the combination grid: this QB's most overdue receiver unit, then every seat by the new combinations it adds
+        const ss = new Set(stackOf[qi]), cands = cgUnits(qi, nStack);
+        for (const u of cands.slice(Math.min(tries, Math.max(0, cands.length - 1)), Math.min(tries, Math.max(0, cands.length - 1)) + 3)) {
+          const t0 = [qi]; let ok = true; for (const r of u.rs) { if (!capOK(r, qi) || !fits(t0, r, Q, ss, u.rs.length, cuts)) { ok = false; break; } t0.push(r); }
+          if (!ok) continue;
+          const c0 = construct(qi, u.rs.length, cuts, u.rs);
+          if (!c0) continue;
+          const tt = penalty(c0, ss, u.rs.length, cuts) === 0 ? c0 : repair(c0, qi, u.rs.length, cuts, new Set(u.rs));
+          if (tt) { t = tt; nStack = u.rs.length; pcs = ["unit:" + u.id]; break; }
+        }
+        if (!t) cgFallbacks++;
+      }
       if (!t) {   // the usual build (always, outside the grid; the grid's fallback when no cell-fill is legal)
         const c0 = construct(qi, nStack, cuts);
-        if (c0) { const r = improve(c0, qi, nStack, cuts); t = r.pen === 0 ? r.t : repair(r.t, qi, nStack, cuts); }
+        if (c0 && K.rand) t = penalty(c0, new Set(stackOf[qi]), nStack, cuts) === 0 ? c0 : repair(c0, qi, nStack, cuts);   // the random floor: no score climb
+        else if (c0) { const r = improve(c0, qi, nStack, cuts); t = r.pen === 0 ? r.t : repair(r.t, qi, nStack, cuts); }
         if (t && K.polish) t = polish(t, qi, nStack, cuts);   // fix 2 - a switch, off by default (it tested worse on Weeks 2-4)
       }
       if (!t) { if (nStack === 2) { nStack = 1; continue; } break; }
@@ -602,14 +705,20 @@ function buildBook(W, K) {
     }
     if (!done) { fails.push(Q.n); rem[qi]--; continue; }
     book.push(done); sets.push(new Set(done)); for (const j of done) use[j]++; rem[qi]--;
-    if (donePcs) for (const pc of donePcs) { const key = unit.id + "|" + pc; cellUse.set(key, (cellUse.get(key) || 0) + 1); pieceUse.set(pc, (pieceUse.get(pc) || 0) + 1); }
+    if (K.rotate) { const ssr = new Set(stackOf[qi]);   // more combinations: each pair this ticket used is worth K.rotate less from here on (the QB + his own receivers excepted)
+      for (let a = 0; a < done.length; a++) for (let b = a + 1; b < done.length; b++) { const x = done[a], y = done[b];
+        if ((x === qi && ssr.has(y)) || (y === qi && ssr.has(x))) continue; pair[x * n + y] -= K.rotate; pair[y * n + x] -= K.rotate; } }
+    if (donePcs && CORE) for (const pc of donePcs) if (pc.startsWith("core:")) coreUse.set(pc.slice(5), (coreUse.get(pc.slice(5)) || 0) + 1);
+    if (CG) { for (let a = 0; a < done.length; a++) for (let b = a + 1; b < done.length; b++) { const x = Math.min(done[a], done[b]), y = Math.max(done[a], done[b]); pairUse[x * n + y]++; }
+      if (donePcs) for (const pc of donePcs) if (pc.startsWith("unit:")) unitUse.set(pc.slice(5), (unitUse.get(pc.slice(5)) || 0) + 1); }
+    if (donePcs && !CORE && !CG) for (const pc of donePcs) { const key = unit.id + "|" + pc; cellUse.set(key, (cellUse.get(key) || 0) + 1); pieceUse.set(pc, (pieceUse.get(pc) || 0) + 1); }
     const ss = new Set(stackOf[qi]); const nss = done.filter(j => ss.has(j)).length;
     if (GRID) why.push((donePcs ? "G " : "G* ") + (unit ? unit.label : "QB+" + nss) + " · " + new Set(done.filter(j => j !== qi).map(j => [P[j].t, P[j].o].sort().join("@"))).size + "g");
     else why.push("QB+" + nss + (done.some(j => P[j].t === Q.o && SKILL[P[j].p]) ? " BB" : ""));
   }
   const ms = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
   const lost = qbs.length && !live.length ? total : 0;
-  return {tickets: book, why, short: seq.length - book.length + lost, fails, ms, banned: [...banned].reduce((a, b) => a + b, 0), cells: cellUse.size, gridFallbacks: GRID ? why.filter(w => w.startsWith("G*")).length : 0};
+  return {tickets: book, why, short: seq.length - book.length + lost, fails, ms, banned: [...banned].reduce((a, b) => a + b, 0), cells: cellUse.size, gridFallbacks: GRID ? why.filter(w => w.startsWith("G*")).length : 0, comboFallbacks: CG ? cgFallbacks : 0};
 }
 </script>
 <script>
@@ -625,7 +734,8 @@ const KNOBS = [
   {k: "two", label: "Two-receiver stacks", min: 0, max: 1, step: 0.05, def: 0.35, help: "Share of each QB's tickets that carry two stack receivers."},
   {k: "spread", label: "Spread the players", min: 0, max: 1, step: 0.05, def: 0.6, help: "How fast a player's pull fades as he lands on more tickets."},
   {k: "cap", label: "Max tickets per player", min: 15, max: 60, step: 1, def: 30, help: "Hard ceiling on any one RB, WR or TE. QBs follow their ticket quotas; DSTs get room, since the pool holds only a handful."},
-  {k: "focus", label: "Stack focus (Grid book)", min: 0, max: 3, step: 0.1, def: 1, help: "How steeply each QB's tickets favour his best stack unit (0 = spread evenly over his top 5 stacks)."},
+  {k: "focus", label: "Stack focus (Grid + Combination grid)", min: 0, max: 3, step: 0.1, def: 1, help: "How steeply each QB's tickets favour his best stack unit (0 = every receiver gets equal turns)."},
+  {k: "lean", label: "Ticket budgets follow the score (Combination grid)", min: 0, max: 3, step: 0.1, def: 1, help: "Each player's share of the tickets follows his score from the knobs above: 1 = in proportion, higher = more to the top players, lower = flatter."},
   {k: "cover", label: "Coverage (Grid book)", min: 0, max: 0.3, step: 0.01, def: 0.08, help: "How hard each new ticket reaches for stack-and-piece pairings it has not tried yet, versus the strongest ones."},
   {k: "minBoom", label: "Skip players under this boom chance", min: 0, max: 0.05, step: 0.0025, def: 0, help: "RB / WR / TE below it are never played (0 = off). Stops salary dumps like a 0.3% tight end.", pct: true},
   {k: "shared", label: "Max players two tickets share", min: 5, max: 8, step: 1, def: 6, help: "Stops near-copies (V13 used 6)."},
@@ -671,10 +781,12 @@ const wk = () => LAB.weeks[S.week];
 const POS_ORDER = {QB: 0, RB: 1, WR: 2, TE: 3, DST: 4};
 const cache = {};
 function gridBook(wi) { const key = "g|" + wi + "|" + JSON.stringify(S.knobs); if (!cache[key]) cache[key] = buildBook(LAB.weeks[wi], {...S.knobs, bans: effBans(), mode: "grid"}); return cache[key]; }
+function comboBook(wi) { const key = "c|" + wi + "|" + JSON.stringify(S.knobs); if (!cache[key]) cache[key] = buildBook(LAB.weeks[wi], {...S.knobs, bans: effBans(), mode: "combo"}); return cache[key]; }
 function knobBook(wi) { const key = wi + "|" + JSON.stringify(S.knobs); if (!cache[key]) cache[key] = buildBook(LAB.weeks[wi], {...S.knobs, bans: effBans()}); return cache[key]; }
 function currentBook() {
   const W = wk();
   if (S.book === "grid") return gridBook(S.week);
+  if (S.book === "combo") return comboBook(S.week);
   if (S.book === "v13") return {tickets: W.pre.books.v13.tickets, why: W.pre.books.v13.why, short: 150 - W.pre.books.v13.tickets.length, fails: []};
   if (S.book === "r2") return {tickets: W.pre.books.r2.tickets, why: W.pre.books.r2.tickets.map(() => "V10 pick"), short: 150 - W.pre.books.r2.tickets.length, fails: []};
   return knobBook(S.week);
@@ -744,7 +856,8 @@ function filterLabel(W) {
 function renderMain(animFrom) {
   const W = wk(), B = currentBook(), n = Math.min(S.shown, B.tickets.length);
   $("scrubv").textContent = n + " / " + B.tickets.length; $("scrub").max = B.tickets.length; $("scrub").value = n;
-  const bits = []; if (S.book === "mine" || S.book === "grid") bits.push("built in " + B.ms + " ms" + (S.book === "grid" ? " · " + B.cells + " stack-and-piece pairings" + (B.gridFallbacks ? " · " + B.gridFallbacks + " tickets fell back to the usual build" : "") : "")); if (B.short) bits.push(B.short + " tickets could not be filled" + (B.fails && B.fails.length ? " (" + [...new Set(B.fails)].map(shortName).join(", ") + ")" : "") + (S.book === "mine" || S.book === "grid" ? " - loosen the per-player cap, the shared-player limit or a rule" : ""));
+  const live = S.book === "mine" || S.book === "grid" || S.book === "combo";
+  const bits = []; if (live) bits.push("built in " + B.ms + " ms" + (S.book === "grid" ? " · " + B.cells + " stack-and-piece pairings" + (B.gridFallbacks ? " · " + B.gridFallbacks + " tickets fell back to the usual build" : "") : "") + (S.book === "combo" ? " · " + new Set(B.tickets.flat()).size + " players combined" + (B.comboFallbacks ? " · " + B.comboFallbacks + " tickets fell back to the usual build" : "") : "")); if (B.short) bits.push(B.short + " tickets could not be filled" + (B.fails && B.fails.length ? " (" + [...new Set(B.fails)].map(shortName).join(", ") + ")" : "") + (live ? " - loosen the per-player cap, the shared-player limit or a rule" : ""));
   $("boardstat").textContent = bits.join(" · ");
   $("filterbar").innerHTML = S.filter ? '<div class="filterbar">Showing ' + filterLabel(W) + ' <button class="btn small" id="clearf">Show all</button></div>' : "";
   if (S.view === "grid") return renderGrid(W, B, n);
@@ -833,7 +946,7 @@ function renderTab() {
     let h = '<div class="kpis"><div class="kpi"><span>Tickets</span><b>' + n + '</b></div><div class="kpi"><span>Players used</span><b>' + C.size + '</b></div><div class="kpi"><span>Most-used player</span><b>' + (nonQB.length ? Math.max(...nonQB) : 0) + "</b></div></div>";
     const ctx = makeCtx(W), off = Object.fromEntries(RULES.map(r => [r.k, false]));
     if (S.knobs.bans.length || S.knobs.banQ) { const bs = new Set(P.map((p, i) => isOut(p) ? i : -1).filter(i => i >= 0)); let bt = 0; for (let k = 0; k < n; k++) if (B.tickets[k].some(j => bs.has(j))) bt++;
-      h += '<p class="note"><b class="' + (bt ? "flag" : "") + '">' + bt + "</b> of these tickets carry a banned player" + (S.book === "mine" ? "" : " (this saved book was built before your bans)") + ".</p>"; }
+      h += '<p class="note"><b class="' + (bt ? "flag" : "") + '">' + bt + "</b> of these tickets carry a banned player" + (S.book === "mine" || S.book === "grid" || S.book === "combo" ? "" : " (this saved book was built before your bans)") + ".</p>"; }
     h += '<h2>Rule check</h2><p class="note">Tickets in this book that each rule would catch. Zero for every rule that is on.</p><div class="rulecheck">' + RULES.map(r => { const R1 = Object.assign({}, off, {[r.k]: true}); let c = 0;
       for (let k = 0; k < n; k++) if (ticketBreaks(ctx, B.tickets[k], R1).length) c++;
       return '<span class="' + (c ? "hit" : "") + '" title="' + esc(r.help) + '">' + esc(r.label) + " <b>" + c + "</b></span>"; }).join("") + "</div>";
@@ -899,7 +1012,7 @@ function renderTab() {
   }
 }
 // ---------- export ----------
-const BOOK_NAME = {mine: "My knobs", grid: "Grid combiner", v13: "V13 combiner", r2: "V10 + rules"}, BOOK_FILE = {mine: "my-knobs", grid: "grid", v13: "v13", r2: "v10-rules"};
+const BOOK_NAME = {mine: "My knobs", grid: "Grid combiner", combo: "Combination grid", v13: "V13 combiner", r2: "V10 + rules"}, BOOK_FILE = {mine: "my-knobs", grid: "grid", combo: "combination-grid", v13: "v13", r2: "v10-rules"};
 function slotTicket(t, P) {
   const by = {QB: [], RB: [], WR: [], TE: [], DST: []};
   for (const j of t) by[P[j].p].push(j);
@@ -969,7 +1082,7 @@ function renderKnobs() {
   for (const r of RULES) $("r-" + r.k).addEventListener("change", e => { S.knobs.rules[r.k] = e.target.checked; e.target.closest(".rule").classList.toggle("off", !e.target.checked); scheduleRebuild(); });
 }
 let rebuildTimer = null;
-function scheduleRebuild() { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => { try { localStorage.setItem("comboLabKnobs", JSON.stringify(S.knobs)); } catch (e) {} stopPlay(); if (S.book !== "mine" && S.book !== "grid") setBook("mine"); S.shown = 150; renderAll(); }, 140); }
+function scheduleRebuild() { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => { try { localStorage.setItem("comboLabKnobs", JSON.stringify(S.knobs)); } catch (e) {} stopPlay(); if (S.book !== "mine" && S.book !== "grid" && S.book !== "combo") setBook("mine"); S.shown = 150; renderAll(); }, 140); }
 function setBook(b) { S.book = b; for (const x of $("books").children) x.setAttribute("aria-pressed", String(x.dataset.b === b)); }
 function setTab(t) { S.tab = t; for (const x of $("tabs").children) x.setAttribute("aria-selected", String(x.dataset.t === t)); }
 function setView(v) { S.view = v; for (const x of $("views").children) x.setAttribute("aria-selected", String(x.dataset.v === v)); }
@@ -1034,7 +1147,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261017175119";
+const BUILD = "20261017200401";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
