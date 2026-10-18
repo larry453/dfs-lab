@@ -129,7 +129,7 @@ table.grid td.diag{font-weight:700;box-shadow:inset 0 0 0 1px var(--ink)}
 <body>
 <header class="top">
   <h1>Combo Lab</h1>
-  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 10:32 AM</span>
+  <span class="stat" id="stamp" title="When this page was last updated">updated Sun 10-18 10:35 AM</span>
   <div class="seg" id="weeks" role="group" aria-label="Week"></div>
   <div class="seg" id="books" role="group" aria-label="Which book">
     <button data-b="mine" aria-pressed="true">My knobs</button><button data-b="grid">Grid combiner</button><button data-b="combo">Combination grid</button><button data-b="v13">V13 combiner</button><button data-b="r2">V10 + rules (Week 6 build)</button>
@@ -575,6 +575,20 @@ function buildBook(W, K) {
     for (const i of live) for (let m = 1; m <= add[i]; m++) tail.push({qi: i, frac: m / add[i], k: P[i].q + m});
     tail.sort((a, b) => a.frac - b.frac || P[a.qi].slot - P[b.qi].slot || a.qi - b.qi);
     for (const e of tail) { seq.push(e); quota[e.qi]++; }
+  }
+  const qbFix = live.filter(i => TIX[P[i].n] > 0);
+  if (qbFix.length) {   // a QB ticket override: his tickets fixed, the rest shared by the other live QBs by their quotas
+    seq.length = 0; for (const k in quota) delete quota[k];
+    const eff = {}; let fixedSum = 0; for (const i of qbFix) { eff[i] = Math.min(total, TIX[P[i].n]); fixedSum += eff[i]; }
+    const others = live.filter(i => !qbFix.includes(i)), oq = others.reduce((a, i) => a + P[i].q, 0), left = Math.max(0, total - fixedSum);
+    const raw = others.map(i => ({i, x: oq ? P[i].q * left / oq : 0})); let given = 0;
+    for (const r of raw) { eff[r.i] = Math.floor(r.x); given += eff[r.i]; }
+    raw.sort((a, b) => (b.x - Math.floor(b.x)) - (a.x - Math.floor(a.x)) || P[a.i].slot - P[b.i].slot || a.i - b.i);
+    for (let k = 0; given < left && raw.length; k++, given++) eff[raw[k % raw.length].i]++;
+    const ord = []; for (const i of live) for (let k = 1; k <= eff[i]; k++) ord.push({qi: i, frac: k / eff[i], k});
+    ord.sort((a, b) => a.frac - b.frac || P[a.qi].slot - P[b.qi].slot || a.qi - b.qi);
+    for (const e of ord) seq.push(e);
+    for (const i of live) quota[i] = eff[i];
   }
   for (const i of live) rem[i] = quota[i];
   // ---- the grid's rows + columns (only when K.mode === "grid") ----
@@ -1168,7 +1182,7 @@ $("reset").addEventListener("click", () => { const keep = S.knobs.bans, keepQ = 
 $("copyk").addEventListener("click", () => { const txt = JSON.stringify(S.knobs); const done = () => { $("copied").textContent = "Copied: " + txt; };
   try { navigator.clipboard.writeText(txt).then(done, () => { $("copied").textContent = txt; }); } catch (e) { $("copied").textContent = txt; } });
 renderKnobs(); syncLive(); renderAll();
-const BUILD = "20261018103239";
+const BUILD = "20261018103515";
 async function latestVersion() {
   if (window.claude || !/^https?:$/.test(location.protocol)) return null;   // only on the website (never inside claude.ai or a saved file)
   try { const r = await fetch("version.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return null; const j = await r.json(); return j && j.v ? j : null; } catch (e) { return null; }
